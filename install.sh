@@ -8,6 +8,7 @@ if command -v apt-get >/dev/null 2>&1; then PM=apt; packages=(python3 git fuzzel
 elif command -v dnf >/dev/null 2>&1; then PM=dnf; packages=(python3 git fuzzel foot grim slurp wl-clipboard cliphist playerctl pamixer brightnessctl curl jq libnotify)
 elif command -v pacman >/dev/null 2>&1; then PM=pacman; packages=(python git fuzzel foot grim slurp wl-clipboard cliphist playerctl pamixer brightnessctl curl jq libnotify)
 elif command -v zypper >/dev/null 2>&1; then PM=zypper; packages=(python3 git fuzzel foot grim slurp wl-clipboard cliphist playerctl pamixer brightnessctl curl jq libnotify)
+elif command -v eopkg >/dev/null 2>&1; then PM=eopkg; packages=(python3 git fuzzel foot grim slurp wl-clipboard cliphist playerctl pamixer brightnessctl curl jq libnotify)
 else PM=manual; fi
 echo "Qtile-Con installer"
 if [[ "$PM" == manual ]]; then
@@ -16,7 +17,13 @@ elif [[ "$DRY_RUN" == 1 ]]; then echo "Dry run: would install using $PM: ${packa
 else
  read -r -p "Install dependencies with $PM? [y/N] " answer
  if [[ "$answer" =~ ^[Yy]$ ]]; then
-  case "$PM" in apt) sudo apt-get update && sudo apt-get install -y "${packages[@]}";; dnf) sudo dnf install -y "${packages[@]}";; pacman) sudo pacman -S --needed "${packages[@]}";; zypper) sudo zypper install -y "${packages[@]}";; esac
+  case "$PM" in
+   apt) sudo apt-get update && sudo apt-get install -y "${packages[@]}";;
+   dnf) sudo dnf install -y "${packages[@]}";;
+   pacman) sudo pacman -S --needed "${packages[@]}";;
+   zypper) sudo zypper install -y "${packages[@]}";;
+   eopkg) sudo eopkg install -y "${packages[@]}";;
+  esac
  fi
 fi
 if [[ "$DRY_RUN" == 1 ]]; then echo "Dry run: would back up $CONFIG and install files."; exit 0; fi
