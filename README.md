@@ -28,9 +28,9 @@ Put wallpapers in `~/Pictures/Wallpapers`, then log out and choose the Qtile Way
 
 ```sh
 qtile check -c ~/.config/qtile/config.py
-```
+``
 
-The installer backs up an existing `~/.config/qtile` before copying this configuration. It does not change your display manager or install Qtile itself.
+For the repository's environment-aware validation wrapper, run `./scripts/check-config` after installing the config, or `~/.config/qtile/scripts/check-config` after installation. The installer backs up an existing `~/.config/qtile` before copying this configuration. It does not change your display manager or install Qtile itself.
 
 ## Dependencies
 
@@ -81,6 +81,7 @@ scripts/
   wal_to_qtile.py
   weather
   screenshot
+  check-config  # Qtile/mypy environment-aware validation
 themes/         # Catppuccin JSON presets
 docs/
   CONFIGURATION.md
@@ -108,7 +109,8 @@ No screenshots are included yet. Add genuine screenshots from a running session 
 
 ## Troubleshooting and uninstall
 
-- Qtile fails to start: run `qtile check -c ~/.config/qtile/config.py` and inspect session logs.
+- **Mypy cannot import `libqtile`**: this commonly means mypy and Qtile are installed in different Python environments. If Qtile was installed with pipx, run `pipx inject qtile mypy`, then rerun `~/.config/qtile/scripts/check-config`. Do not suppress the missing imports as the first fix.
+- **Qtile fails to start**: run `~/.config/qtile/scripts/check-config` and inspect session logs.
 - Missing icons: install and select a Nerd Font.
 - Wallpaper fails: check that swww-daemon is running and the image is readable.
 - Clipboard history empty: ensure the autostart watcher `wl-paste --type text --watch cliphist store` is running.
