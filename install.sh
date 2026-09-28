@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HOME/.config/qtile"
 
 # Validate this checkout before package installation or replacing user config.
-for required_file in config.py qtile_config/__init__.py qtile_config/keys.py qtile_config/layouts.py qtile_config/screens.py scripts/check-config scripts/theme_apply.py scripts/logout-menu themes/catppuccin-mocha.json; do
+for required_file in config.py qtile_config/__init__.py qtile_config/keys.py qtile_config/layouts.py qtile_config/screens.py qtile_config/widgets.py scripts/check-config scripts/theme_apply.py scripts/logout-menu scripts/weather scripts/set-weather-location scripts/volume-status themes/catppuccin-mocha.json themes/catppuccin-mocha.rasi; do
   if [[ ! -f "$ROOT/$required_file" ]]; then
     echo "ERROR: required repository file is missing: $required_file" >&2
     exit 2
