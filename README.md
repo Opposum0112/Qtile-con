@@ -1,119 +1,117 @@
 # Qtile-Con: Material Desktop for Qtile Wayland
 
-A modular Qtile Wayland desktop configuration inspired by Dank Material Shell and Noctalia: Catppuccin styling, interactive bar, launchers, widgets, wallpaper-driven colors, quick controls, screenshot and clipboard workflows.
+A modular Qtile Wayland desktop configuration inspired by Dank Material Shell and Noctalia, with Catppuccin colors, an interactive bar, launcher, widgets, wallpaper-driven palette generation, and quick desktop actions.
 
-> **Status:** initial community configuration. Tested hardware/distribution combinations vary. Run the installer with `--dry-run` first and review package names for your distribution.
+> **Status:** initial configuration. Distribution/package combinations have not all been tested. Review scripts and run the installer with `--dry-run` first.
 
 ## Features
 
-- Qtile's native Wayland backend and modular Python configuration.
-- Catppuccin Mocha default palette, with Latte, Frappe and Macchiato presets.
-- Top bar: workspaces, active window, CPU, memory, weather, volume, clock, tray.
-- Clickable actions: app launcher, layout selector, wallpaper picker, theme menu, clipboard history, screenshot.
-- Wallpaper selection with `swww`; optional `pywal` palette generation for wallpaper-derived colors.
-- Fuzzel launcher, grim/slurp screenshots, wl-clipboard clipboard tools, playerctl media controls.
-- Configurable gaps, borders, layouts, keybindings and bar modules.
-- Install and uninstall scripts; helper scripts are kept separate from Qtile config.
+- Qtile's Wayland backend with modular Python configuration.
+- Catppuccin Mocha default and Latte, Frappe, Macchiato theme presets.
+- Bar with workspaces, focused window, CPU, memory, weather, volume, clock, tray and action icons.
+- Fuzzel launcher and interactive layout, wallpaper, theme and clipboard pickers.
+- Wallpaper selection via `swww`; optional pywal palette generation updates Qtile colors.
+- grim/slurp screenshots copied to clipboard, wl-clipboard and cliphist integration.
+- Configurable layouts, gaps, borders, keybindings and bar dimensions.
+- Installer with backup and dry-run; uninstall preserves a backup and does not remove packages.
 
 ## Quick start
 
-1. Install a supported Linux distribution with a working Wayland session and Python 3.
-2. Clone this repository:
-   ```sh
-   git clone https://github.com/Opposum0112/Qtile-con.git
-   cd Qtile-con
-   ```
-3. Preview installation and then install:
-   ```sh
-   ./install.sh --dry-run
-   ./install.sh
-   ```
-4. Copy some images into `~/Pictures/Wallpapers`.
-5. Log out and select **Qtile (Wayland)** in your display manager. If your display manager does not list it, consult the Qtile Wayland documentation for your distribution.
-6. Start with `Super + Return` for a terminal, `Super + D` for the launcher, and `Super + Shift + W` for wallpapers.
+```sh
+git clone https://github.com/Opposum0112/Qtile-con.git
+cd Qtile-con
+./install.sh --dry-run
+./install.sh
+```
 
-The installer backs up existing `~/.config/qtile` to a timestamped directory before installing. It does not change your display manager or automatically replace your login session.
+Put wallpapers in `~/Pictures/Wallpapers`, then log out and choose the Qtile Wayland session. Ensure Qtile is installed with its Wayland backend and native dependencies. Validate the configuration with:
+
+```sh
+qtile check -c ~/.config/qtile/config.py
+```
+
+The installer backs up an existing `~/.config/qtile` before copying this configuration. It does not change your display manager or install Qtile itself.
 
 ## Dependencies
 
-Core: Qtile with Wayland support, Python, `fuzzel`, `foot` (or change terminal in `config/settings.py`), `swww`, `grim`, `slurp`, `wl-clipboard`, `cliphist`, `playerctl`, `pamixer`, `brightnessctl`, `lm_sensors`, `curl`, `jq`, `libnotify`, `network-manager-applet` (optional tray applet), and a Nerd Font.
+Install Qtile with Wayland support, Python, fuzzel, foot (or change `config/settings.py`), swww or swaybg, grim, slurp, wl-clipboard, cliphist, playerctl, pamixer, brightnessctl, curl, jq, libnotify, a Nerd Font, and optionally btop, pavucontrol, nm-connection-editor, nm-applet, swaylock, wlogout and pywal.
 
-Optional: `python-pywal` / `pywal` for wallpaper-derived colors, `wlogout` for a graphical logout menu, `pavucontrol` for audio settings, `blueman` for Bluetooth, `nm-connection-editor` for network settings.
-
-Package names vary by distribution. The installer supports common Debian/Ubuntu, Fedora, Arch, and openSUSE package managers where possible; review the script before running it. Install Qtile from your distribution or a Python environment that provides the Wayland backend and its native dependencies.
+The installer offers package installation for Debian/Ubuntu, Fedora, Arch and openSUSE. Package names vary by release; review the list and install missing packages manually. Qtile's Wayland backend requires additional system libraries depending on your distribution.
 
 ## Keybindings
 
 | Shortcut | Action |
 |---|---|
-| `Super + Return` | Terminal |
-| `Super + D` | Fuzzel app launcher |
-| `Super + Tab` | Next layout |
-| `Super + Shift + Space` | Interactive layout picker |
-| `Super + Shift + W` | Wallpaper picker |
-| `Super + Shift + T` | Theme picker |
-| `Super + V` | Clipboard history |
-| `Print` | Select screenshot region |
-| `Super + Print` | Full-screen screenshot |
-| `Super + Ctrl + R` | Restart Qtile |
-| `Super + Escape` | Lock screen (if `swaylock` is installed) |
-| `Super + Shift + Q` | Kill focused window |
-| `Super + Shift + E` | Qtile exit prompt |
+| Super + Return | Terminal |
+| Super + D | Fuzzel launcher |
+| Super + 1…9 | Switch workspace |
+| Super + Shift + 1…9 | Move window to workspace |
+| Super + Tab | Next layout |
+| Super + Shift + Space | Interactive layout picker |
+| Super + Shift + W | Wallpaper picker |
+| Super + Shift + T | Theme picker |
+| Super + V | Clipboard history |
+| Print | Region screenshot (saved and copied) |
+| Super + Print | Full screenshot (saved and copied) |
+| Super + Ctrl + R | Restart Qtile |
+| Super + Shift + Q | Close focused window |
+| Super + Shift + E | wlogout (optional) |
+| Super + comma / period | Volume down / up |
+| Super + M | Mute |
+| Super + B / N | Brightness down / up |
 
-## Structure
+## Modular structure
 
 ```text
-.
-├── config.py                 # Qtile entry point
-├── config/
-│   ├── __init__.py
-│   ├── settings.py           # user-adjustable settings
-│   ├── keys.py               # keybindings
-│   ├── groups.py             # workspaces
-│   ├── layouts.py            # layouts, gaps and borders
-│   ├── widgets.py            # native Qtile bar
-│   ├── screens.py            # screen/bar setup
-│   └── colors.py              # generated/current palette
-├── scripts/
-│   ├── qtile-action           # launcher/layout/theme/wallpaper actions
-│   ├── set-wallpaper
-│   ├── set-theme
-│   ├── weather
-│   └── screenshot
-├── themes/                    # Catppuccin palette presets
-├── install.sh
-└── uninstall.sh
+config.py
+config/
+  settings.py   # user preferences
+  colors.py     # active palette
+  groups.py     # workspaces
+  keys.py       # keybindings
+  layouts.py    # layouts, gaps, borders
+  widgets.py    # bar and interactions
+  screens.py    # screen/bar setup
+scripts/
+  autostart
+  qtile-action
+  set-wallpaper
+  set-theme
+  theme_apply.py
+  wal_to_qtile.py
+  weather
+  screenshot
+themes/         # Catppuccin JSON presets
+docs/
+  CONFIGURATION.md
+install.sh
+uninstall.sh
 ```
 
-## Wallpaper-driven theme
+## Theming and wallpaper
 
-Use `Super + Shift + W` to select a wallpaper. If `pywal` is installed, the wallpaper action asks it to generate a palette and then restarts Qtile so the bar picks up the new colors. You can instead choose a fixed Catppuccin variant with `Super + Shift + T`. Theme changes update the generated `config/colors.py`; restart Qtile if a running widget does not refresh immediately.
+Click the palette icon or press `Super + Shift + T` to select a Catppuccin preset. A theme writes `config/colors.py`; restart Qtile if existing widgets do not update.
+
+Choose a wallpaper with `Super + Shift + W`. If pywal is installed, it generates a palette and the helper maps it to Qtile's semantic colors before restarting Qtile. Without pywal, the wallpaper changes but the active Catppuccin palette remains. To restore a Catppuccin preset, use the theme picker.
 
 ## Weather
 
-The weather widget uses `curl` against wttr.in and displays a compact current-conditions string. Set `QTILE_WEATHER_LOCATION` in your environment to a city or postal code. The service requires network access; weather is omitted if the request fails. Avoid setting a precise home address.
+Weather is fetched from wttr.in using curl. Set `QTILE_WEATHER_LOCATION` to a city or postal code in the environment; otherwise wttr.in auto-detects a coarse location. The widget needs network access and may be blank if the service is unavailable.
 
 ## Customize
 
-- Edit `config/settings.py` for terminal, launcher, wallpaper directory, gaps, border width and bar height.
-- Edit `config/layouts.py` to add/remove layouts.
-- Add custom widgets in `config/widgets.py`.
-- Add palette JSON files under `themes/` and choose them using `scripts/set-theme`.
-- Helpers are designed to fail gracefully when optional applications are missing.
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md). Edit `config/settings.py` for gaps, border width, bar height, terminal and wallpaper directory. Edit `config/layouts.py` for layout order and `config/widgets.py` for bar modules.
 
 ## Screenshots
 
-No screenshots are included yet. Add screenshots of your own running desktop under `docs/screenshots/` and link them here; screenshots should reflect a real session rather than mockups.
+No screenshots are included yet. Add genuine screenshots from a running session under `docs/screenshots/`.
 
-## Troubleshooting
+## Troubleshooting and uninstall
 
-- **Qtile fails to start:** run `qtile check -c ~/.config/qtile/config.py` from a terminal and inspect the session log.
-- **No Wayland session:** verify that your Qtile package was built with Wayland support and that its backend dependencies are installed.
-- **Missing icons:** install a Nerd Font and select it in your terminal/font configuration.
-- **Wallpaper does not change:** check `swww-daemon` is running and that the wallpaper path is readable.
-- **Clipboard history empty:** copy some text first; `cliphist` needs a Wayland clipboard watcher. Start `wl-paste --type text --watch cliphist store` in your autostart.
-- **Weather blank:** check `curl`, internet access, and `QTILE_WEATHER_LOCATION`.
+- Qtile fails to start: run `qtile check -c ~/.config/qtile/config.py` and inspect session logs.
+- Missing icons: install and select a Nerd Font.
+- Wallpaper fails: check that swww-daemon is running and the image is readable.
+- Clipboard history empty: ensure the autostart watcher `wl-paste --type text --watch cliphist store` is running.
+- Weather blank: verify curl, network access and the location setting.
 
-## Safety and uninstall
-
-Review `install.sh` before running it. The installer installs packages only after prompting. `./uninstall.sh` removes this configuration and its user-level autostart file, but deliberately does not remove packages or personal wallpapers.
+Run `./uninstall.sh` to move the active config to a timestamped backup. Packages and wallpapers are left untouched.
