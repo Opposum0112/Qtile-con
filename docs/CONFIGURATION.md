@@ -8,6 +8,12 @@
 - `qtile_config/screens.py`: screen and bar placement.
 - `qtile_config/colors.py`: active palette generated from a theme preset.
 
+## Prerequisites
+
+This project targets **Qtile on X11/Xorg**, not a Wayland session. Before logging out, confirm that Qtile is installed with its X11 dependencies, an Xorg server is available, and your display manager can launch a Qtile X11 session. Required utilities include Python 3, Rofi, `xterm` (default terminal), `feh`, `maim`, `xclip`, `xsel`, `playerctl`, `curl`, `jq`, desktop notifications and a Nerd Font. Optional integrations include `greenclip`, `btop`, `pavucontrol`, `pamixer`, `brightnessctl`, `nm-applet`, `i3lock`, `lxsession-logout` and `pywal`.
+
+The installer can offer packages on Debian/Ubuntu, Fedora, Arch-family, openSUSE and Solus, but it does not install Xorg or configure your display-manager session.
+
 ## X11 backend
 
 This project targets Qtile's X11 backend. Use an Xorg session and select **Qtile (X11)** in the display manager. The configuration package is named `qtile_config` (not `config`) to avoid a module-name collision with the `config.py` entry point. The configuration remains modular and preserves the existing workspaces, layouts, Catppuccin themes, bar and keybindings.
@@ -23,9 +29,11 @@ Put PNG, JPEG or WebP files in `~/Pictures/Wallpapers`, then use Super+Shift+W. 
 Run:
 
 ```sh
+bash ~/.config/qtile/scripts/check-config
+# Or:
 qtile check -c ~/.config/qtile/config.py
 ```
 
 If Qtile is installed in a pipx environment, make sure validation tools such as mypy are installed in that same environment. Run `bash scripts/check-config` from the repository (or `~/.config/qtile/scripts/check-config` after installation) to show which Qtile executable is being used and validate the installed entry point.
 
-Package names vary by distribution. Review `./install.sh --dry-run` before installing dependencies.
+Package names vary by distribution. Review `./install.sh --dry-run` before installing dependencies. Resolve validation errors before logging out. If the Qtile session is missing from your display manager, configure an Xorg session entry separately.
