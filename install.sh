@@ -19,6 +19,14 @@ done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HOME/.config/qtile"
+
+# Validate this checkout before package installation or replacing user config.
+for required_file in config.py qtile_config/__init__.py qtile_config/keys.py qtile_config/layouts.py qtile_config/screens.py scripts/check-config scripts/theme_apply.py themes/catppuccin-mocha.json; do
+  if [[ ! -f "$ROOT/$required_file" ]]; then
+    echo "ERROR: required repository file is missing: $required_file" >&2
+    exit 2
+  fi
+done
 OS_ID=unknown
 OS_LIKE=""
 OS_NAME="Unknown Linux"
@@ -180,6 +188,12 @@ check_command pamixer "audio controls" optional
 check_command brightnessctl "brightness controls" optional
 check_command pipx "isolated Python installer" optional
 check_command qtile "Qtile window manager" required
+if command -v Xorg >/dev/null 2>&1 || [[ -x /usr/lib/Xorg ]] || [[ -x /usr/libexec/Xorg ]]; then
+  printf '  OK      %-16s %s\\n' "Xorg" "X11 server executable"
+else
+  printf '  MISSING %-16s %s\\n' "Xorg" "X11 server (install via your distro)"
+  MISSING=1
+fi
 
 if command -v qtile >/dev/null 2>&1; then
   echo
@@ -196,6 +210,7 @@ fi
 echo
 echo "Configuration installed to $CONFIG"
 echo "Select the Qtile X11 session in your display manager. This installer does not install or reconfigure Xorg or your display manager."
+echo "Run: bash \"$CONFIG/scripts/check-config\" before logging out."
 if (( MISSING != 0 )); then
   echo "One or more required dependencies or validation checks failed. Review the messages above." >&2
   exit 1
