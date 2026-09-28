@@ -1,18 +1,45 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
 LOCATION_FILE="$CONFIG_DIR/weather-location"
 location="${QTILE_WEATHER_LOCATION:-}"
+
 if [[ -z "$location" && -r "$LOCATION_FILE" ]]; then
   IFS= read -r location < "$LOCATION_FILE" || true
 fi
 location="${location:-auto}"
-if ! command -v curl >/dev/null 2>&1; then echo "Weather: install curl"; exit 0; fi
-encoded_location="$(printf '%s' "$location" | sed 's/ /+/g')"
-if ! output="$(curl -fsS --connect-timeout 3 --max-time 8 -G \
-  --data-urlencode 'format=%l: %c %t' \
-  "https://wttr.in/$encoded_location" 2>/dev/null)"; then
+
+if ! command -v curl >/dev/null 2>&1; then
+  echo "Weather: install curl"
+  exit 0
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Weather: install python3"
+  exit 0
+fi
+
+# wttr.in expects URL-escaped locations in the URL path. Replacing spaces
+# with '+' is form encoding and can make multi-word city names fail.
+if [[ "$location" == "auto" ]]; then
+  url="https://wttr.in/"
+else
+  encoded_location="$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe=","))' "$location")"
+  url="https://wttr.in/$encoded_location"
+fi
+
+if ! output="$(curl -fsS --connect-timeout 4 --max-time 12 \
+  --retry 1 --retry-delay 1 \
+  -H 'Cache-Control: no-cache' \
+  -G --data-urlencode 'format=%l: %c %t' \
+  "$url" 2>/dev/null)"; then
   echo "Weather unavailable"
   exit 0
 fi
-printf '%s\n' "$output" | head -c 100
+
+output="$(printf '%s' "$output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+if [[ -z "$output" || "$output" == *"Unknown location"* ]]; then
+  echo "Weather unavailable"
+else
+  printf '%s\n' "$output" | cut -c1-100
+fi
