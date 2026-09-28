@@ -163,7 +163,7 @@ check_command() {
     printf '  OK      %-16s %s\n' "$command_name" "$description"
   else
     printf '  MISSING %-16s %s\n' "$command_name" "$description"
-    [[ "$required" == required ]] && MISSING=1
+    if [[ "$required" == required ]]; then MISSING=1; fi
   fi
 }
 check_command python3 "Python runtime" required
