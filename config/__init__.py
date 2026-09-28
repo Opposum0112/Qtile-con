@@ -1,1 +1,0 @@
-"""Modular Qtile desktop configuration."""
