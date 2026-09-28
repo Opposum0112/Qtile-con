@@ -1,12 +1,12 @@
 """Keyboard shortcuts and interactive desktop actions."""
 from libqtile.config import Key
 from libqtile.lazy import lazy
-from config.settings import MOD, TERMINAL, SCRIPTS
+from config.settings import MOD, TERMINAL, SCRIPTS, LAUNCHER
 from config.groups import groups
 
 keys = [
     Key([MOD], "Return", lazy.spawn(TERMINAL)),
-    Key([MOD], "d", lazy.spawn("fuzzel")),
+    Key([MOD], "d", lazy.spawn(LAUNCHER)),
     Key([MOD], "Tab", lazy.next_layout()),
     Key([MOD, "shift"], "space", lazy.spawn(f"{SCRIPTS}/qtile-action layout")),
     Key([MOD, "shift"], "w", lazy.spawn(f"{SCRIPTS}/set-wallpaper")),
@@ -16,8 +16,8 @@ keys = [
     Key([MOD], "Print", lazy.spawn(f"{SCRIPTS}/screenshot full")),
     Key([MOD, "ctrl"], "r", lazy.restart()),
     Key([MOD, "shift"], "q", lazy.window.kill()),
-    Key([MOD, "shift"], "e", lazy.spawn("wlogout")),
-    Key([MOD], "Escape", lazy.spawn("swaylock")),
+    Key([MOD, "shift"], "e", lazy.spawn("lxsession-logout")),
+    Key([MOD], "Escape", lazy.spawn("i3lock")),
     Key([MOD], "Left", lazy.layout.left()),
     Key([MOD], "Right", lazy.layout.right()),
     Key([MOD], "Down", lazy.layout.down()),

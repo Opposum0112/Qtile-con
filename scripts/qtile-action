@@ -2,15 +2,16 @@
 set -euo pipefail
 action="${1:-launcher}"
 case "$action" in
-  launcher) exec fuzzel ;;
+  launcher) exec rofi -show drun ;;
   clipboard)
-    if command -v cliphist >/dev/null 2>&1; then
-      cliphist list | fuzzel --dmenu --prompt='Clipboard > ' | cliphist decode | wl-copy
-    else notify-send "Clipboard" "Install cliphist and enable its watcher"; fi
+    if command -v greenclip >/dev/null 2>&1; then
+      exec rofi -modi "clipboard:greenclip print" -show clipboard
+    else
+      notify-send "Clipboard history" "Install greenclip for searchable clipboard history."
+    fi
     ;;
   layout)
-    # Select an available layout by its Qtile layout name.
-    choice="$(printf '%s\n' columns max matrix monadtall monadwide tile floating | fuzzel --dmenu --prompt='Layout > ' || true)"
+    choice="$(printf '%s\n' columns max matrix monadtall monadwide tile floating | rofi -dmenu -p 'Layout > ' || true)"
     [[ -n "$choice" ]] || exit 0
     qtile cmd-obj -o group -f setlayout -a "$choice" 2>/dev/null || notify-send "Qtile" "Could not set layout: $choice"
     ;;

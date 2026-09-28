@@ -4,10 +4,11 @@ mode="${1:-region}"
 outdir="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
 mkdir -p "$outdir"
 file="$outdir/$(date +'%Y-%m-%d_%H-%M-%S').png"
+command -v maim >/dev/null || { notify-send "Qtile" "Install maim for screenshots"; exit 1; }
 case "$mode" in
-  full) grim "$file" ;;
-  region) grim -g "$(slurp)" "$file" ;;
+  full) maim "$file" ;;
+  region) maim -s "$file" ;;
   *) echo "Usage: screenshot [full|region]" >&2; exit 2 ;;
 esac
-if command -v wl-copy >/dev/null 2>&1; then wl-copy < "$file"; fi
+if command -v xclip >/dev/null 2>&1; then xclip -selection clipboard -t image/png -i "$file"; fi
 notify-send "Screenshot saved" "$file"
