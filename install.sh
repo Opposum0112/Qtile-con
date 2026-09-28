@@ -189,9 +189,9 @@ check_command brightnessctl "brightness controls" optional
 check_command pipx "isolated Python installer" optional
 check_command qtile "Qtile window manager" required
 if command -v Xorg >/dev/null 2>&1 || [[ -x /usr/lib/Xorg ]] || [[ -x /usr/libexec/Xorg ]]; then
-  printf '  OK      %-16s %s\\n' "Xorg" "X11 server executable"
+  printf '  OK      %-16s %s\n' "Xorg" "X11 server executable"
 else
-  printf '  MISSING %-16s %s\\n' "Xorg" "X11 server (install via your distro)"
+  printf '  MISSING %-16s %s\n' "Xorg" "X11 server (install via your distro)"
   MISSING=1
 fi
 
