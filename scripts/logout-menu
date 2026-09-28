@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-
-# Lightweight logout menu; deliberately independent of LXDE/Openbox.
-choice="$(printf '%s\n' 'Log out' Cancel | rofi -dmenu -i -p 'Session > ' || true)"
-[[ -n "$choice" && "$choice" != "Cancel" ]] || exit 0
-
-if [[ -n "${XDG_SESSION_ID:-}" ]] && command -v loginctl >/dev/null 2>&1; then
-  exec loginctl terminate-session "$XDG_SESSION_ID"
-fi
-
-notify-send "Qtile-Con" "Cannot identify this login session. Log out using your display manager."
-exit 1
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+THEME="$CONFIG_DIR/themes/catppuccin-mocha.rasi"
+choice="$(printf '%s\n' '󰍃  Log out' '󰜉  Lock screen' '󰜗  Reboot' '󰐥  Shut down' 'Cancel' | rofi -dmenu -i -p 'Power menu' -theme "$THEME" || true)"
+case "$choice" in
+  *"Log out"*)
+    if [[ -n "${XDG_SESSION_ID:-}" ]] && command -v loginctl >/dev/null 2>&1; then exec loginctl terminate-session "$XDG_SESSION_ID"; fi
+    notify-send "Qtile-Con" "Cannot identify this login session. Log out using your display manager."
+    ;;
+  *"Lock screen"*)
+    if command -v i3lock >/dev/null 2>&1; then exec i3lock; fi
+    notify-send "Qtile-Con" "Install i3lock to use the lock action."
+    ;;
+  *"Reboot"*) exec systemctl reboot ;;
+  *"Shut down"*) exec systemctl poweroff ;;
+  *) exit 0 ;;
+esac
