@@ -24,7 +24,7 @@ The X11 scripts use Rofi for menus, feh for wallpapers, maim for screenshots, xc
 
 ## Alacritty and bar RAM information\n\nThe `alacritty/` directory contains the Catppuccin Mocha TOML palette and a starter Alacritty config that imports it. The installer places the palette at `~/.config/alacritty/qtile-con-catppuccin-mocha.toml`, creates `alacritty.toml` only when one does not already exist, and preserves existing user configuration. Existing configs can enable the palette with `general.import = ["~/.config/alacritty/qtile-con-catppuccin-mocha.toml"]`. The RAM widget displays used and total memory in MiB plus the percentage.\n\n## Rofi, audio and weather
 
-Rofi menus use `themes/catppuccin-mocha.rasi` for the launcher, power menu and weather-location prompt. Click the weather text in the bar to save a city in `~/.config/qtile/weather-location`; the next polling cycle uses the saved city. The audio widget polls available PulseAudio/PipeWire/ALSA tools and returns a harmless `VOL N/A` status when no backend is detected.
+Rofi menus use `themes/catppuccin-mocha.rasi` for the launcher, power menu and weather-location prompt. The launcher enables desktop icons using the Adwaita icon theme; icon rendering depends on installed desktop icon metadata. Click the weather text in the bar to save a city in `~/.config/qtile/weather-location`; the widget is asked to refresh immediately and also polls every five minutes. Multi-word locations are URL-encoded before being sent to wttr.in. The audio widget polls available PulseAudio/PipeWire/ALSA tools and returns a harmless `VOL N/A` status when no backend is detected.
 
 ## Themes and wallpapers
 
