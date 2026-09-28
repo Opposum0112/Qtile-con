@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+dir="${QTILE_WALLPAPER_DIR:-$HOME/Pictures/Wallpapers}"
+mkdir -p "$dir"
+command -v fuzzel >/dev/null || { notify-send "Qtile" "Install fuzzel to select wallpapers"; exit 1; }
+mapfile -d '' files < <(find "$dir" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0 | sort -z)
+(("${#files[@]}" > 0)) || { notify-send "Qtile" "Add images to $dir first"; exit 0; }
+choice="$(printf '%s\n' "${files[@]}" | sed "s#^$dir/##" | fuzzel --dmenu --prompt='Wallpaper > ')"
+[[ -n "$choice" ]] || exit 0
+file="$dir/$choice"
+if command -v swww >/dev/null 2>&1; then
+  swww img "$file" --transition-type grow --transition-duration 1
+elif command -v swaybg >/dev/null 2>&1; then
+  pkill swaybg || true
+  swaybg -i "$file" -m fill &
+else
+  notify-send "Qtile" "Install swww or swaybg"
+  exit 1
+fi
+if command -v wal >/dev/null 2>&1; then
+  wal -i "$file" -n >/dev/null 2>&1 || true
+  # pywal palette is generated separately; fixed Catppuccin remains the fallback.
+fi
