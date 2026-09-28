@@ -19,9 +19,10 @@ done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HOME/.config/qtile"
+ALACRITTY_CONFIG="$HOME/.config/alacritty"
 
 # Validate this checkout before package installation or replacing user config.
-for required_file in config.py qtile_config/__init__.py qtile_config/keys.py qtile_config/layouts.py qtile_config/screens.py qtile_config/widgets.py scripts/check-config scripts/theme_apply.py scripts/logout-menu scripts/weather scripts/set-weather-location scripts/volume-status themes/catppuccin-mocha.json themes/catppuccin-mocha.rasi; do
+for required_file in config.py qtile_config/__init__.py qtile_config/keys.py qtile_config/layouts.py qtile_config/screens.py qtile_config/widgets.py scripts/check-config scripts/theme_apply.py scripts/logout-menu scripts/weather scripts/set-weather-location scripts/volume-status themes/catppuccin-mocha.json themes/catppuccin-mocha.rasi alacritty/alacritty.toml alacritty/catppuccin-mocha.toml; do
   if [[ ! -f "$ROOT/$required_file" ]]; then
     echo "ERROR: required repository file is missing: $required_file" >&2
     exit 2
@@ -157,7 +158,9 @@ else
 fi
 
 if [[ "$DRY_RUN" == 1 ]]; then
-  echo "Dry run: would back up $CONFIG and install configuration files."
+  echo "Dry run: would back up $CONFIG and install Qtile configuration files."
+  echo "Dry run: would install the Catppuccin Mocha Alacritty theme to $ALACRITTY_CONFIG."
+  echo "Dry run: would preserve an existing Alacritty config; create the example config only if none exists."
   exit 0
 fi
 
@@ -169,6 +172,17 @@ fi
 mkdir -p "$CONFIG"
 cp -a "$ROOT/config.py" "$ROOT/qtile_config" "$ROOT/scripts" "$ROOT/themes" "$CONFIG/"
 chmod +x "$CONFIG"/scripts/*
+
+# Install the matching Alacritty palette without overwriting existing user config.
+mkdir -p "$ALACRITTY_CONFIG"
+cp "$ROOT/alacritty/catppuccin-mocha.toml" "$ALACRITTY_CONFIG/qtile-con-catppuccin-mocha.toml"
+if [[ ! -e "$ALACRITTY_CONFIG/alacritty.toml" ]]; then
+  cp "$ROOT/alacritty/alacritty.toml" "$ALACRITTY_CONFIG/alacritty.toml"
+  echo "Created Alacritty config with Catppuccin Mocha theme."
+else
+  echo "Preserved existing Alacritty config: $ALACRITTY_CONFIG/alacritty.toml"
+  echo "To enable the theme, add this to it: general.import = [\"~/.config/alacritty/qtile-con-catppuccin-mocha.toml\"]"
+fi
 
 export PATH="$HOME/.local/bin:$PATH"
 echo
