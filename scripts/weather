@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+location="${QTILE_WEATHER_LOCATION:-auto}"
+command -v curl >/dev/null 2>&1 || { echo "Weather: install curl"; exit 0; }
+curl -fsS --max-time 4 "https://wttr.in/${location}?format=%c+%t" 2>/dev/null | head -c 80 || true
