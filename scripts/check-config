@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Run qtile check with the same virtual environment that provides Qtile.
+# This matters for pipx installs: a system mypy cannot import pipx's libqtile.
+if ! command -v qtile >/dev/null 2>&1; then
+  echo "ERROR: qtile was not found on PATH." >&2
+  exit 127
+fi
+
+QTILE_CMD="$(command -v qtile)"
+QTILE_REAL="$(readlink -f "$QTILE_CMD" 2>/dev/null || printf '%s' "$QTILE_CMD")"
+QTILE_BIN_DIR="$(dirname "$QTILE_REAL")"
+
+# Put Qtile's environment first so qtile check finds its matching mypy.
+if [[ -x "$QTILE_BIN_DIR/mypy" ]]; then
+  export PATH="$QTILE_BIN_DIR:$PATH"
+elif [[ "$QTILE_REAL" == *"/pipx/venvs/qtile/"* ]]; then
+  cat >&2 <<'EOF'
+ERROR: Qtile appears to be installed by pipx, but mypy is not installed
+in Qtile's virtual environment.
+
+Run:
+  pipx inject qtile mypy
+
+Then retry:
+  ./scripts/check-config
+EOF
+  exit 1
+fi
+
+if ! command -v mypy >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+ERROR: mypy was not found on PATH.
+Install it using your distribution's package manager, or install it in
+the same Python environment as Qtile. For pipx-managed Qtile:
+  pipx inject qtile mypy
+EOF
+  exit 127
+fi
+
+echo "Qtile executable: $QTILE_REAL"
+echo "mypy executable:  $(command -v mypy)"
+echo "Checking $HOME/.config/qtile/config.py"
+exec qtile check -c "$HOME/.config/qtile/config.py"
