@@ -188,7 +188,7 @@ check_command qtile "Qtile window manager" required
 if command -v qtile >/dev/null 2>&1; then
   echo
   echo "Qtile validation:"
-  qtile check -c "$CONFIG/config.py" || {
+  "$CONFIG/scripts/check-config" || {
     echo "WARNING: 'qtile check' failed. Review the output before using this config." >&2
     MISSING=1
   }
