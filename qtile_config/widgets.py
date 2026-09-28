@@ -23,7 +23,7 @@ def poll_script(name, fallback):
         try:
             result = subprocess.run(
                 [f"{SCRIPTS}/{name}"], capture_output=True, text=True,
-                timeout=8, check=False,
+                timeout=15, check=False,
             )
             value = result.stdout.strip()
             return value if result.returncode == 0 and value else fallback
@@ -52,9 +52,9 @@ def build_widgets():
         widget.TextBox(text="󰍛 ", foreground=COLORS["green"], background=BG, mouse_callbacks={"Button1": lambda: spawn(TERMINAL, "-e", "btop")}),
         widget.CPU(format="{load_percent}%", foreground=FG, background=BG, update_interval=3, mouse_callbacks={"Button1": lambda: spawn(TERMINAL, "-e", "btop")}),
         widget.TextBox(text="󰘚 ", foreground=COLORS["blue"], background=BG),
-        widget.Memory(format="{MemPercent}%", foreground=FG, background=BG, update_interval=5),
+        widget.Memory(format="{MemUsed:.0f}/{MemTotal:.0f}M ({MemPercent}%)", foreground=FG, background=BG, update_interval=5),
         widget.TextBox(text="󰖩 ", foreground=COLORS["teal"], background=BG, mouse_callbacks={"Button1": lambda: spawn("nm-connection-editor")}),
-        widget.GenPollText(func=poll_script("weather", "Weather unavailable"), update_interval=900, foreground=FG, background=BG, mouse_callbacks={"Button1": lambda: spawn(f"{SCRIPTS}/set-weather-location")}),
+        widget.GenPollText(name="weather", func=poll_script("weather", "Weather unavailable"), update_interval=300, foreground=FG, background=BG, mouse_callbacks={"Button1": lambda: spawn(f"{SCRIPTS}/set-weather-location")}),
         widget.GenPollText(func=poll_script("volume-status", "VOL N/A"), update_interval=5, foreground=COLORS["peach"], background=BG, mouse_callbacks={"Button1": open_audio_mixer}),
         widget.TextBox(text="󰸉 ", foreground=COLORS["pink"], background=BG, mouse_callbacks=action("set-wallpaper")),
         widget.TextBox(text="󰏘 ", foreground=COLORS["mauve"], background=BG, mouse_callbacks=action("set-theme")),

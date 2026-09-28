@@ -1,4 +1,8 @@
 /* Catppuccin Mocha — Qtile-Con Rofi theme */
+configuration {
+    show-icons: true;
+    icon-theme: "Adwaita";
+}
 * { font: "JetBrainsMono Nerd Font 11"; background-color: transparent; text-color: #cdd6f4; }
 window { location: center; anchor: center; width: 42%; border: 2px; border-color: #cba6f7; border-radius: 16px; background-color: #1e1e2e; padding: 24px; }
 mainbox { background-color: #1e1e2e; spacing: 14px; children: [ inputbar, message, listview ]; }
@@ -9,5 +13,5 @@ message { background-color: #313244; border-radius: 8px; padding: 8px; }
 listview { background-color: #1e1e2e; lines: 8; columns: 1; fixed-height: false; spacing: 5px; scrollbar: false; }
 element { background-color: #1e1e2e; border-radius: 8px; padding: 10px 12px; spacing: 10px; }
 element selected { background-color: #45475a; text-color: #f5e0dc; border: 1px; border-color: #cba6f7; }
-element-icon { size: 1.2em; background-color: inherit; }
+element-icon { size: 1.35em; margin: 0 10px 0 0; background-color: inherit; }
 element-text { background-color: inherit; text-color: inherit; }
