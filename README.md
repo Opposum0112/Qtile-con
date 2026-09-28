@@ -30,13 +30,42 @@ Log out and choose the **Qtile (X11)** session in your display manager. Ensure y
 qtile check -c ~/.config/qtile/config.py
 ```
 
+Run validation before logging out. If Qtile was installed with pipx, ensure `~/.local/bin` is on `PATH` and use that same executable for validation.
+
 The installer backs up an existing `~/.config/qtile` before copying this configuration. The modular Python package is named `qtile_config` to avoid a Python import collision between `config.py` and a `config/` package. It does not change your display manager or configure Xorg.
 
-## Dependencies
+## Prerequisites
 
-Qtile with its X11 dependencies, Python, Rofi, an X11 terminal (default `xterm`), `feh`, `maim`, `xclip`, `xsel`, `playerctl`, `pamixer`, `brightnessctl`, `curl`, `jq`, `libnotify`, and a Nerd Font. Optional tools include `greenclip` (clipboard history), `btop`, `pavucontrol`, `nm-connection-editor`, `nm-applet`, `i3lock`, `lxsession-logout`, and `pywal`.
+### Required
 
-The installer offers package installation for Debian/Ubuntu, Fedora, Arch-family, openSUSE and Solus where package names are known. Review the planned package list; package names vary by release.
+- A supported Linux distribution with an **Xorg/X11 session**. This configuration does not target Wayland.
+- Qtile installed with its X11 backend dependencies, plus Python 3.
+- An Xorg server and a display manager/session capable of launching Qtile, or a known way to start an Xorg session manually.
+- Rofi, an X11 terminal (default `xterm`), `feh`, `maim`, `xclip`, `xsel`, `playerctl`, `curl`, `jq`, and desktop notifications (`libnotify` / `notify-send`; package names vary).
+- A Nerd Font for the bar icons.
+
+The installer can attempt to install common dependencies on Debian/Ubuntu, Fedora, Arch-family, openSUSE and Solus. It does **not** install or reconfigure Xorg, your display manager, or the display-manager session entry. Qtile's Python package alone may not be sufficient if system X11 dependencies are missing.
+
+### Optional integrations
+
+- `greenclip`: clipboard history.
+- `btop`: system monitor.
+- `pavucontrol` and `pamixer`: audio controls.
+- `brightnessctl`: brightness keys.
+- `nm-connection-editor` / `nm-applet`: network controls.
+- `i3lock`: lock-screen shortcut.
+- `lxsession-logout`: logout menu.
+- `pywal` (the `wal` command): wallpaper palette generation.
+- `gnome-calendar`: calendar shortcut.
+
+Some optional shortcuts do nothing when their application is not installed.
+
+Review planned package operations before installing:
+
+```sh
+./install.sh --dry-run
+```
+
 
 ## Keybindings
 
@@ -91,6 +120,23 @@ uninstall.sh
 ## Theming and wallpaper
 
 Place PNG, JPEG or WebP files in `~/Pictures/Wallpapers`, then press Super+Shift+W or click the wallpaper icon. `feh` applies the wallpaper. If `wal` is installed, the selected image can also generate an updated Qtile palette.
+
+## Uninstall
+
+```sh
+./uninstall.sh --dry-run  # show the target and backup path
+./uninstall.sh            # confirm interactively
+./uninstall.sh --yes      # skip confirmation
+```
+
+The uninstaller moves `~/.config/qtile` to a timestamped backup. It does not remove packages, wallpapers or screenshots. Review the backup before deleting it manually.
+
+## Troubleshooting
+
+- If the configuration does not load, run `bash ~/.config/qtile/scripts/check-config` and inspect the traceback.
+- If the Qtile (X11) session is missing, configure an Xorg session entry for your display manager; this repository does not manage that.
+- If icons are missing, install and select a Nerd Font, then restart Qtile.
+- After changing a theme, press Super+Ctrl+R to reload the palette.
 
 ## Notes
 
