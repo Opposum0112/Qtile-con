@@ -45,27 +45,27 @@ case "$OS_ID" in
   solus)
     PM=eopkg
     BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession pywal pipx)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock pywal pipx)
     ;;
   debian|ubuntu|linuxmint|pop)
     PM=apt
     BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-bin)
-    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol network-manager-gnome i3lock lxsession pywal pipx)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol network-manager-gnome i3lock pywal pipx)
     ;;
   fedora|nobara)
     PM=dnf
     BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol NetworkManager-gnome i3lock lxsession pywal pipx)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol NetworkManager-gnome i3lock pywal pipx)
     ;;
   arch|manjaro|endeavouros|garuda)
     PM=pacman
     BASE_PACKAGES=(python git rofi xterm feh maim xclip xsel playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession python-pywal python-pipx)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock python-pywal python-pipx)
     ;;
   opensuse*|opensuse-tumbleweed|opensuse-leap|suse)
     PM=zypper
     BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-tools)
-    OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol NetworkManager-applet i3lock lxsession pywal python3-pipx)
+    OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol NetworkManager-applet i3lock pywal python3-pipx)
     ;;
   *)
     if command -v apt-get >/dev/null 2>&1; then PM=apt
@@ -75,11 +75,11 @@ case "$OS_ID" in
     elif command -v eopkg >/dev/null 2>&1; then PM=eopkg
     fi
     case "$PM" in
-      apt) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-bin); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol network-manager-gnome i3lock lxsession pywal pipx) ;;
-      dnf) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol NetworkManager-gnome i3lock lxsession pywal pipx) ;;
-      pacman) BASE_PACKAGES=(python git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession python-pywal python-pipx) ;;
-      zypper) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-tools); OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol NetworkManager-applet i3lock lxsession pywal python3-pipx) ;;
-      eopkg) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession pywal pipx) ;;
+      apt) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-bin); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol network-manager-gnome i3lock pywal pipx) ;;
+      dnf) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol NetworkManager-gnome i3lock pywal pipx) ;;
+      pacman) BASE_PACKAGES=(python git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock python-pywal python-pipx) ;;
+      zypper) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-tools); OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol NetworkManager-applet i3lock pywal python3-pipx) ;;
+      eopkg) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock pywal pipx) ;;
     esac
     ;;
 esac
@@ -87,6 +87,18 @@ esac
 echo "Qtile-Con X11 installer"
 echo "Detected OS: $OS_NAME (ID=$OS_ID${OS_LIKE:+, ID_LIKE=$OS_LIKE})"
 echo "Package manager: ${PM:-not detected}"
+
+# Regression guard: this is a Qtile-only installer. Do not install session
+# packages that can pull in a second desktop/window manager (e.g. lxsession,
+# which may bring LXDE/Openbox components on some distributions).
+for package in "${BASE_PACKAGES[@]}" "${OPTIONAL_PACKAGES[@]}"; do
+  case "${package,,}" in
+    openbox|lxde|lxde-*|lxsession)
+      echo "ERROR: unexpected desktop-session package in installer list: $package" >&2
+      exit 2
+      ;;
+  esac
+done
 if [[ -z "$PM" ]]; then
   echo "Could not detect a supported package manager."
   echo "Install manually: Python 3, Qtile with X11 dependencies, rofi, xterm, feh, maim, xclip, xsel, playerctl, curl, jq and libnotify."
