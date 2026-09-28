@@ -1,9 +1,9 @@
-"""Central settings; adjust these values to personalize the desktop."""
+"""Central settings; adjust these values to personalize the X11 desktop."""
 import os
 
 MOD = "mod4"
-TERMINAL = os.environ.get("QTILE_TERMINAL", "foot")
-LAUNCHER = os.environ.get("QTILE_LAUNCHER", "fuzzel")
+TERMINAL = os.environ.get("QTILE_TERMINAL", "xterm")
+LAUNCHER = os.environ.get("QTILE_LAUNCHER", "rofi -show drun")
 WALLPAPER_DIR = os.path.expanduser(os.environ.get("QTILE_WALLPAPER_DIR", "~/Pictures/Wallpapers"))
 GAP = 8
 BORDER_WIDTH = 2
