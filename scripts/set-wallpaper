@@ -13,11 +13,10 @@ if command -v swww >/dev/null 2>&1; then
 elif command -v swaybg >/dev/null 2>&1; then
   pkill swaybg || true
   swaybg -i "$file" -m fill &
-else
-  notify-send "Qtile" "Install swww or swaybg"
-  exit 1
-fi
+else notify-send "Qtile" "Install swww or swaybg"; exit 1; fi
+# If pywal is available, derive a palette and map it into Qtile's palette module.
 if command -v wal >/dev/null 2>&1; then
   wal -i "$file" -n >/dev/null 2>&1 || true
-  # pywal palette is generated separately; fixed Catppuccin remains the fallback.
+  python3 "$(dirname "$0")/wal_to_qtile.py" || true
+  qtile cmd-obj -o cmd -f restart >/dev/null 2>&1 || true
 fi
