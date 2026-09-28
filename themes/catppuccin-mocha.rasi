@@ -2,7 +2,6 @@
 configuration {
     show-icons: true;
     icon-theme: "Adwaita";
-    drun { display-name: "󰍉 Apps"; }
 }
 * { font: "JetBrainsMono Nerd Font 11"; background-color: transparent; text-color: #cdd6f4; }
 window { location: center; anchor: center; width: 42%; border: 2px; border-color: #cba6f7; border-radius: 16px; background-color: #1e1e2e; padding: 24px; }
