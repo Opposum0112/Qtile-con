@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/Pictures/Screenshots"
+# Start wallpaper daemon once per session.
+if command -v swww >/dev/null 2>&1 && ! pgrep -x swww-daemon >/dev/null 2>&1; then
+  swww-daemon &
+fi
+# Clipboard history watcher.
+if command -v wl-paste >/dev/null 2>&1 && command -v cliphist >/dev/null 2>&1; then
+  pgrep -af 'wl-paste.*cliphist store' >/dev/null 2>&1 || wl-paste --type text --watch cliphist store &
+fi
+# Network applet is optional.
+if command -v nm-applet >/dev/null 2>&1; then nm-applet --indicator & fi
