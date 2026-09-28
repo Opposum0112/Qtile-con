@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Qtile-Con installer. Installs distro packages individually, then checks tools.
+# Qtile-Con X11 installer.
 DRY_RUN=0
 ASSUME_YES=0
 for arg in "$@"; do
@@ -36,28 +36,28 @@ OPTIONAL_PACKAGES=()
 case "$OS_ID" in
   solus)
     PM=eopkg
-    BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx)
+    BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession pywal pipx)
     ;;
   debian|ubuntu|linuxmint|pop)
     PM=apt
-    BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify-bin)
-    OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx)
+    BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-bin)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol network-manager-gnome i3lock lxsession pywal pipx)
     ;;
   fedora|nobara)
     PM=dnf
-    BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx)
+    BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol NetworkManager-gnome i3lock lxsession pywal pipx)
     ;;
   arch|manjaro|endeavouros|garuda)
     PM=pacman
-    BASE_PACKAGES=(python git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python-pipx)
+    BASE_PACKAGES=(python git rofi xterm feh maim xclip xsel playerctl curl jq libnotify)
+    OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession python-pywal python-pipx)
     ;;
   opensuse*|opensuse-tumbleweed|opensuse-leap|suse)
     PM=zypper
-    BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python3-pipx)
+    BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-tools)
+    OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol NetworkManager-applet i3lock lxsession pywal python3-pipx)
     ;;
   *)
     if command -v apt-get >/dev/null 2>&1; then PM=apt
@@ -67,26 +67,25 @@ case "$OS_ID" in
     elif command -v eopkg >/dev/null 2>&1; then PM=eopkg
     fi
     case "$PM" in
-      apt) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify-bin); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx) ;;
-      dnf) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx) ;;
-      pacman) BASE_PACKAGES=(python git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python-pipx) ;;
-      zypper) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python3-pipx) ;;
-      eopkg) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx) ;;
+      apt) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-bin); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol network-manager-gnome i3lock lxsession pywal pipx) ;;
+      dnf) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol NetworkManager-gnome i3lock lxsession pywal pipx) ;;
+      pacman) BASE_PACKAGES=(python git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(greenclip pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession python-pywal python-pipx) ;;
+      zypper) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify-tools); OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol NetworkManager-applet i3lock lxsession pywal python3-pipx) ;;
+      eopkg) BASE_PACKAGES=(python3 git rofi xterm feh maim xclip xsel playerctl curl jq libnotify); OPTIONAL_PACKAGES=(pamixer brightnessctl btop pavucontrol nm-connection-editor network-manager-applet i3lock lxsession pywal pipx) ;;
     esac
     ;;
 esac
 
-echo "Qtile-Con installer"
+echo "Qtile-Con X11 installer"
 echo "Detected OS: $OS_NAME (ID=$OS_ID${OS_LIKE:+, ID_LIKE=$OS_LIKE})"
 echo "Package manager: ${PM:-not detected}"
-
 if [[ -z "$PM" ]]; then
   echo "Could not detect a supported package manager."
-  echo "Install dependencies manually: Python 3, Qtile with Wayland support, fuzzel, foot, grim, slurp, wl-clipboard, playerctl, curl, jq, libnotify; optional tools: cliphist, pamixer, brightnessctl, swww, pipx."
+  echo "Install manually: Python 3, Qtile with X11 dependencies, rofi, xterm, feh, maim, xclip, xsel, playerctl, curl, jq and libnotify."
 elif [[ "$DRY_RUN" == 1 ]]; then
   echo "Dry run: would install base packages: ${BASE_PACKAGES[*]}"
   echo "Dry run: would attempt optional packages: ${OPTIONAL_PACKAGES[*]}"
-  echo "Dry run: if Qtile is missing and pipx is available, would install qtile[wayland]."
+  echo "Dry run: if Qtile is missing and pipx is available, would install qtile."
 else
   if [[ "$ASSUME_YES" != 1 ]]; then
     read -r -p "Install dependencies using $PM? [y/N] " answer
@@ -125,16 +124,14 @@ else
     for package in "${OPTIONAL_PACKAGES[@]}"; do install_one "$package" optional || true; done
   fi
 
-  # Qtile is not consistently packaged across distributions. Prefer a distro
-  # package if the user installed one; otherwise use pipx to isolate its Python deps.
   export PATH="$HOME/.local/bin:$PATH"
   if ! command -v qtile >/dev/null 2>&1; then
     if command -v pipx >/dev/null 2>&1; then
-      echo "Qtile not found; attempting isolated installation of Qtile with Wayland support."
-      pipx install 'qtile[wayland]' || echo "WARNING: pipx could not install qtile[wayland]. See Qtile's distro-specific Wayland dependencies." >&2
+      echo "Qtile not found; attempting isolated installation. Ensure the system's X11 development dependencies are installed."
+      pipx install qtile || echo "WARNING: pipx could not install Qtile. Install it using your distribution package or Qtile's X11 dependency instructions." >&2
       export PATH="$HOME/.local/bin:$PATH"
     else
-      echo "Qtile not found and pipx is unavailable; install Qtile with Wayland support manually." >&2
+      echo "Qtile not found and pipx is unavailable; install Qtile with X11 support manually." >&2
     fi
   fi
 fi
@@ -168,20 +165,19 @@ check_command() {
 }
 check_command python3 "Python runtime" required
 check_command git "Git" required
-check_command fuzzel "launcher" required
-check_command foot "terminal" required
-check_command grim "screenshots" required
-check_command slurp "region selection" required
-check_command wl-copy "Wayland clipboard" required
-check_command wl-paste "Wayland clipboard read" required
+check_command rofi "launcher" required
+check_command xterm "terminal (default)" required
+check_command feh "wallpaper utility" required
+check_command maim "screenshots" required
+check_command xclip "X11 clipboard" required
+check_command xsel "X11 selection utility" optional
 check_command playerctl "media controls" optional
 check_command curl "weather lookup" optional
 check_command jq "JSON utilities" optional
 check_command notify-send "desktop notifications" optional
-check_command cliphist "clipboard history" optional
+check_command greenclip "clipboard history" optional
 check_command pamixer "audio controls" optional
 check_command brightnessctl "brightness controls" optional
-check_command swww "wallpaper service" optional
 check_command pipx "isolated Python installer" optional
 check_command qtile "Qtile window manager" required
 
@@ -194,12 +190,12 @@ if command -v qtile >/dev/null 2>&1; then
   }
 else
   echo
-  echo "Qtile is missing. Install it with Wayland support and consult the Qtile documentation"
-  echo "for any distribution-specific wlroots/Wayland development libraries."
+  echo "Qtile is missing. Install Qtile with its X11 dependencies before starting the session."
 fi
 
 echo
 echo "Configuration installed to $CONFIG"
+echo "Select the Qtile X11 session in your display manager. This installer does not install or reconfigure Xorg or your display manager."
 if (( MISSING != 0 )); then
   echo "One or more required dependencies or validation checks failed. Review the messages above." >&2
   exit 1
