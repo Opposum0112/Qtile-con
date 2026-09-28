@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Qtile-Con installer. Package installation is best-effort per package so one
-# unavailable optional package does not prevent the rest of the setup.
+# Qtile-Con installer. Installs distro packages individually, then checks tools.
 DRY_RUN=0
 ASSUME_YES=0
 for arg in "$@"; do
@@ -38,7 +37,7 @@ case "$OS_ID" in
   solus)
     PM=eopkg
     BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify)
-    OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python3-pip)
+    OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx)
     ;;
   debian|ubuntu|linuxmint|pop)
     PM=apt
@@ -61,7 +60,6 @@ case "$OS_ID" in
     OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python3-pipx)
     ;;
   *)
-    # Fall back to a recognizable package manager for derivatives or custom systems.
     if command -v apt-get >/dev/null 2>&1; then PM=apt
     elif command -v dnf >/dev/null 2>&1; then PM=dnf
     elif command -v pacman >/dev/null 2>&1; then PM=pacman
@@ -73,7 +71,7 @@ case "$OS_ID" in
       dnf) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx) ;;
       pacman) BASE_PACKAGES=(python git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python-pipx) ;;
       zypper) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python3-pipx) ;;
-      eopkg) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww python3-pip) ;;
+      eopkg) BASE_PACKAGES=(python3 git fuzzel foot grim slurp wl-clipboard playerctl curl jq libnotify); OPTIONAL_PACKAGES=(cliphist pamixer brightnessctl swww pipx) ;;
     esac
     ;;
 esac
@@ -84,10 +82,11 @@ echo "Package manager: ${PM:-not detected}"
 
 if [[ -z "$PM" ]]; then
   echo "Could not detect a supported package manager."
-  echo "Install dependencies manually: Python 3, Qtile with Wayland support, fuzzel, foot, grim, slurp, wl-clipboard, playerctl, curl, jq, libnotify, and optionally cliphist, pamixer, brightnessctl, swww."
+  echo "Install dependencies manually: Python 3, Qtile with Wayland support, fuzzel, foot, grim, slurp, wl-clipboard, playerctl, curl, jq, libnotify; optional tools: cliphist, pamixer, brightnessctl, swww, pipx."
 elif [[ "$DRY_RUN" == 1 ]]; then
   echo "Dry run: would install base packages: ${BASE_PACKAGES[*]}"
   echo "Dry run: would attempt optional packages: ${OPTIONAL_PACKAGES[*]}"
+  echo "Dry run: if Qtile is missing and pipx is available, would install qtile[wayland]."
 else
   if [[ "$ASSUME_YES" != 1 ]]; then
     read -r -p "Install dependencies using $PM? [y/N] " answer
@@ -95,36 +94,48 @@ else
   fi
   if [[ -n "$PM" ]]; then
     case "$PM" in
-      apt) sudo apt-get update ;;
-      dnf) sudo dnf makecache ;;
-      pacman) sudo pacman -Sy --noconfirm ;;
-      zypper) sudo zypper refresh ;;
-      eopkg) sudo eopkg update-repo ;;
+      apt) sudo apt-get update || echo "WARNING: apt metadata refresh failed." >&2 ;;
+      dnf) sudo dnf makecache || echo "WARNING: dnf metadata refresh failed." >&2 ;;
+      pacman) sudo pacman -Sy --noconfirm || echo "WARNING: pacman database refresh failed." >&2 ;;
+      zypper) sudo zypper refresh || echo "WARNING: zypper refresh failed." >&2 ;;
+      eopkg) sudo eopkg update-repo || echo "WARNING: eopkg repository refresh failed." >&2 ;;
     esac
 
     install_one() {
-      local package="$1" required="$2"
-      echo "Installing $package..."
+      local package="$1" required="$2" rc=0
+      echo "Installing package: $package"
       case "$PM" in
-        apt) sudo apt-get install -y "$package" ;;
-        dnf) sudo dnf install -y "$package" ;;
-        pacman) sudo pacman -S --needed --noconfirm "$package" ;;
-        zypper) sudo zypper --non-interactive install "$package" ;;
-        eopkg) sudo eopkg install -y "$package" ;;
+        apt) sudo apt-get install -y "$package" || rc=$? ;;
+        dnf) sudo dnf install -y "$package" || rc=$? ;;
+        pacman) sudo pacman -S --needed --noconfirm "$package" || rc=$? ;;
+        zypper) sudo zypper --non-interactive install "$package" || rc=$? ;;
+        eopkg) sudo eopkg install -y "$package" || rc=$? ;;
       esac
-      local rc=$?
       if (( rc != 0 )); then
         if [[ "$required" == required ]]; then
           echo "WARNING: required package '$package' could not be installed." >&2
         else
-          echo "Optional package '$package' unavailable or failed to install; continuing." >&2
+          echo "Optional package '$package' unavailable or failed; continuing." >&2
         fi
-        return 1
+        return "$rc"
       fi
     }
 
     for package in "${BASE_PACKAGES[@]}"; do install_one "$package" required || true; done
     for package in "${OPTIONAL_PACKAGES[@]}"; do install_one "$package" optional || true; done
+  fi
+
+  # Qtile is not consistently packaged across distributions. Prefer a distro
+  # package if the user installed one; otherwise use pipx to isolate its Python deps.
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! command -v qtile >/dev/null 2>&1; then
+    if command -v pipx >/dev/null 2>&1; then
+      echo "Qtile not found; attempting isolated installation of Qtile with Wayland support."
+      pipx install 'qtile[wayland]' || echo "WARNING: pipx could not install qtile[wayland]. See Qtile's distro-specific Wayland dependencies." >&2
+      export PATH="$HOME/.local/bin:$PATH"
+    else
+      echo "Qtile not found and pipx is unavailable; install Qtile with Wayland support manually." >&2
+    fi
   fi
 fi
 
@@ -133,7 +144,6 @@ if [[ "$DRY_RUN" == 1 ]]; then
   exit 0
 fi
 
-# Install configuration even if a package was unavailable; report missing tools below.
 if [[ -e "$CONFIG" ]]; then
   backup="${CONFIG}.backup.$(date +%Y%m%d-%H%M%S)"
   mv "$CONFIG" "$backup"
@@ -143,8 +153,9 @@ mkdir -p "$CONFIG"
 cp -a "$ROOT/config.py" "$ROOT/config" "$ROOT/scripts" "$ROOT/themes" "$CONFIG/"
 chmod +x "$CONFIG"/scripts/*
 
+export PATH="$HOME/.local/bin:$PATH"
 echo
-echo "Dependency check (commands not found are listed as missing):"
+echo "Dependency check:"
 MISSING=0
 check_command() {
   local command_name="$1" description="$2" required="$3"
@@ -170,22 +181,26 @@ check_command notify-send "desktop notifications" optional
 check_command cliphist "clipboard history" optional
 check_command pamixer "audio controls" optional
 check_command brightnessctl "brightness controls" optional
-check_command swww "animated wallpaper service" optional
-check_command qtile "Qtile compositor/window manager" required
+check_command swww "wallpaper service" optional
+check_command pipx "isolated Python installer" optional
+check_command qtile "Qtile window manager" required
 
-if ! command -v qtile >/dev/null 2>&1; then
+if command -v qtile >/dev/null 2>&1; then
   echo
-  echo "Qtile was not found. Install Qtile with Wayland support using your distro package"
-  echo "if available, or install it in an isolated Python environment (for example, pipx)."
-  echo "Qtile's Wayland backend may need additional system libraries; consult the Qtile"
-  echo "installation documentation for your distribution."
+  echo "Qtile validation:"
+  qtile check -c "$CONFIG/config.py" || {
+    echo "WARNING: 'qtile check' failed. Review the output before using this config." >&2
+    MISSING=1
+  }
+else
+  echo
+  echo "Qtile is missing. Install it with Wayland support and consult the Qtile documentation"
+  echo "for any distribution-specific wlroots/Wayland development libraries."
 fi
 
 echo
 echo "Configuration installed to $CONFIG"
-echo "Validate when Qtile is installed with Wayland support:"
-echo "  qtile check -c ~/.config/qtile/config.py"
 if (( MISSING != 0 )); then
-  echo "One or more required commands are missing. Review the messages above." >&2
+  echo "One or more required dependencies or validation checks failed. Review the messages above." >&2
   exit 1
 fi
