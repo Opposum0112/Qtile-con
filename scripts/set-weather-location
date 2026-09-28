@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+LOCATION_FILE="$CONFIG_DIR/weather-location"
+THEME="$CONFIG_DIR/themes/catppuccin-mocha.rasi"
+mkdir -p "$CONFIG_DIR"
+current="auto"
+[[ -r "$LOCATION_FILE" ]] && IFS= read -r current < "$LOCATION_FILE" || true
+if ! command -v rofi >/dev/null 2>&1; then
+  notify-send "Qtile-Con" "Rofi is required to change the weather location."
+  exit 1
+fi
+location="$(rofi -dmenu -i -p "Weather location" -mesg "Enter a city, e.g. London, UK" -theme "$THEME" <<< "$current" || true)"
+[[ -n "${location//[[:space:]]/}" ]] || exit 0
+printf '%s\n' "$location" > "$LOCATION_FILE"
+notify-send "Qtile-Con" "Weather location set to: $location"
