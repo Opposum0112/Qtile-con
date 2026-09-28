@@ -7,7 +7,7 @@ A modular Qtile desktop configuration for **X11**, inspired by Dank Material She
 ## Features
 
 - Qtile's X11 backend with modular Python configuration.
-- Catppuccin Mocha default and Latte, Frappe, Macchiato theme presets.
+- Catppuccin Mocha default and Latte, Frappe theme presets.
 - Bar with workspaces, focused window, CPU, memory, weather, volume, clock, tray and action icons.
 - Rofi launcher and interactive layout, wallpaper, theme and clipboard pickers.
 - Wallpaper selection via `feh`; optional `pywal` palette generation updates Qtile colors.
@@ -30,7 +30,7 @@ Log out and choose the **Qtile (X11)** session in your display manager. Ensure y
 qtile check -c ~/.config/qtile/config.py
 ```
 
-The installer backs up an existing `~/.config/qtile` before copying this configuration. It does not change your display manager or configure Xorg.
+The installer backs up an existing `~/.config/qtile` before copying this configuration. The modular Python package is named `qtile_config` to avoid a Python import collision between `config.py` and a `config/` package. It does not change your display manager or configure Xorg.
 
 ## Dependencies
 
@@ -64,7 +64,7 @@ The installer offers package installation for Debian/Ubuntu, Fedora, Arch-family
 
 ```text
 config.py
-config/
+qtile_config/
   settings.py   # user preferences and X11 application defaults
   colors.py     # active palette
   groups.py     # workspaces

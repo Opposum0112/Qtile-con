@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG="${QTILE_CONFIG:-$HOME/.config/qtile/config.py}"
+QTILE_BIN="${QTILE_BIN:-$(command -v qtile || true)}"
+
+if [[ -z "$QTILE_BIN" ]]; then
+  echo "ERROR: qtile was not found on PATH." >&2
+  echo "If installed with pipx, try: export PATH=\"$HOME/.local/bin:\$PATH\"" >&2
+  exit 127
+fi
+
+if [[ ! -f "$CONFIG" ]]; then
+  echo "ERROR: Qtile config not found: $CONFIG" >&2
+  exit 2
+fi
+
+echo "Qtile executable: $QTILE_BIN"
+echo "Config file:      $CONFIG"
+exec "$QTILE_BIN" check -c "$CONFIG"

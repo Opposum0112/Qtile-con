@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert a Catppuccin palette JSON into config/colors.py."""
+"""Convert a Catppuccin palette JSON into qtile_config/colors.py."""
 import json
 import pathlib
 import sys
@@ -15,3 +15,4 @@ if not required.issubset(colors):
     raise SystemExit(f"Palette missing required keys: {', '.join(sorted(required - colors.keys()))}")
 lines = ['"""Generated palette; edit themes/*.json instead."""', f"COLORS = {colors!r}", 'BG = COLORS["base"]', 'FG = COLORS["text"]', 'ACCENT = COLORS["mauve"]', 'MUTED = COLORS["overlay"]', '']
 target.write_text("\n".join(lines))
+print(f"Updated {target}. Restart Qtile (Super+Ctrl+R) to reload the palette.")

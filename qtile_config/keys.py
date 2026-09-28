@@ -1,8 +1,8 @@
 """Keyboard shortcuts and interactive desktop actions."""
 from libqtile.config import Key
 from libqtile.lazy import lazy
-from config.settings import MOD, TERMINAL, SCRIPTS, LAUNCHER
-from config.groups import groups
+from qtile_config.settings import MOD, TERMINAL, SCRIPTS, LAUNCHER
+from qtile_config.groups import groups
 
 keys = [
     Key([MOD], "Return", lazy.spawn(TERMINAL)),

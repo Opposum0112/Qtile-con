@@ -147,7 +147,7 @@ if [[ -e "$CONFIG" ]]; then
   echo "Existing configuration backed up to: $backup"
 fi
 mkdir -p "$CONFIG"
-cp -a "$ROOT/config.py" "$ROOT/config" "$ROOT/scripts" "$ROOT/themes" "$CONFIG/"
+cp -a "$ROOT/config.py" "$ROOT/qtile_config" "$ROOT/scripts" "$ROOT/themes" "$CONFIG/"
 chmod +x "$CONFIG"/scripts/*
 
 export PATH="$HOME/.local/bin:$PATH"

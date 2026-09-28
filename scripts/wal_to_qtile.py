@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 source = Path.home() / ".cache/wal/colors.json"
-target = Path.home() / ".config/qtile/config/colors.py"
+target = Path.home() / ".config/qtile/qtile_config/colors.py"
 if not source.exists():
     raise SystemExit("pywal colors.json not found")
 raw = json.loads(source.read_text()).get("colors", {})

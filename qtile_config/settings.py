@@ -10,5 +10,5 @@ BORDER_WIDTH = 2
 BAR_HEIGHT = 36
 FONT = "JetBrainsMono Nerd Font"
 FONT_SIZE = 12
-THEME_FILE = os.path.expanduser("~/.config/qtile/config/colors.py")
+THEME_FILE = os.path.expanduser("~/.config/qtile/qtile_config/colors.py")
 SCRIPTS = os.path.expanduser("~/.config/qtile/scripts")
