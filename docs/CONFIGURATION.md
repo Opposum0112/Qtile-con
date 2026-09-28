@@ -26,6 +26,6 @@ Run:
 qtile check -c ~/.config/qtile/config.py
 ```
 
-If Qtile is installed in a pipx environment, make sure validation tools such as mypy are installed in that same environment. Use `scripts/check-config` to show which Qtile executable is being used and validate the installed entry point.
+If Qtile is installed in a pipx environment, make sure validation tools such as mypy are installed in that same environment. Run `bash scripts/check-config` from the repository (or `~/.config/qtile/scripts/check-config` after installation) to show which Qtile executable is being used and validate the installed entry point.
 
 Package names vary by distribution. Review `./install.sh --dry-run` before installing dependencies.
