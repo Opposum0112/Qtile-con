@@ -5,7 +5,7 @@ import pathlib
 import sys
 
 source = pathlib.Path(sys.argv[1]).expanduser()
-target = pathlib.Path.home() / ".config/qtile/config/colors.py"
+target = pathlib.Path.home() / ".config/qtile/qtile_config/colors.py"
 data = json.loads(source.read_text())
 colors = data.get("colors", data)
 # Accept simple {name: '#hex'} palettes only.
