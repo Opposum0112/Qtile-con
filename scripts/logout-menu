@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Lightweight logout menu; deliberately independent of LXDE/Openbox.
+choice="$(printf '%s\n' 'Log out' Cancel | rofi -dmenu -i -p 'Session > ' || true)"
+[[ -n "$choice" && "$choice" != "Cancel" ]] || exit 0
+
+if [[ -n "${XDG_SESSION_ID:-}" ]] && command -v loginctl >/dev/null 2>&1; then
+  exec loginctl terminate-session "$XDG_SESSION_ID"
+fi
+
+notify-send "Qtile-Con" "Cannot identify this login session. Log out using your display manager."
+exit 1
