@@ -6,15 +6,13 @@ case "$action" in
   clipboard)
     if command -v cliphist >/dev/null 2>&1; then
       cliphist list | fuzzel --dmenu --prompt='Clipboard > ' | cliphist decode | wl-copy
-    else
-      notify-send "Clipboard" "Install cliphist and enable its watcher"
-    fi
+    else notify-send "Clipboard" "Install cliphist and enable its watcher"; fi
     ;;
   layout)
-    # Show the current screen's layout names, then select one interactively.
-    layouts="$(qtile cmd-obj -o cmd -f eval -a '",".join([l.name for l in qtile.current_group.layouts])' 2>/dev/null || true)"
-    choice="$(printf '%s\n' "${layouts//,/\n}" | fuzzel --dmenu --prompt='Layout > ' || true)"
-    [[ -n "$choice" ]] && qtile cmd-obj -o cmd -f next_layout
+    # Select an available layout by its Qtile layout name.
+    choice="$(printf '%s\n' columns max matrix monadtall monadwide tile floating | fuzzel --dmenu --prompt='Layout > ' || true)"
+    [[ -n "$choice" ]] || exit 0
+    qtile cmd-obj -o group -f setlayout -a "$choice" 2>/dev/null || notify-send "Qtile" "Could not set layout: $choice"
     ;;
   *) echo "Usage: qtile-action [launcher|clipboard|layout]" >&2; exit 2 ;;
 esac
