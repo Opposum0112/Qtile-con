@@ -122,7 +122,7 @@ uninstall.sh
 
 ## Alacritty theme\n\nThe repository includes a Catppuccin Mocha Alacritty palette and a starter `alacritty/alacritty.toml`. The installer copies the palette to `~/.config/alacritty/qtile-con-catppuccin-mocha.toml`; it creates `~/.config/alacritty/alacritty.toml` only when one does not already exist. Existing Alacritty configuration is preserved. To enable the theme in an existing configuration, add:\n\n```toml\ngeneral.import = ["~/.config/alacritty/qtile-con-catppuccin-mocha.toml"]\n```\n\nThe bar shows RAM used, total RAM in MiB, and percentage, for example `3200/15800M (20%)`.\n\n## Rofi theme and weather location
 
-Rofi uses the included Catppuccin Mocha theme for the application launcher, weather-location prompt, and power menu. The weather widget defaults to automatic location detection. Click the weather text in the bar to enter a city (for example, `London, UK`); the choice is saved in `~/.config/qtile/weather-location`. Weather requires a working network connection and `curl`.
+Rofi uses the included Catppuccin Mocha theme for the application launcher, weather-location prompt, and power menu. The application launcher enables desktop icons using the Adwaita icon theme (with the system icon theme as a fallback). The weather widget defaults to automatic location detection and refreshes every five minutes. Click the weather text in the bar to enter a city (for example, `London, UK`); the choice is saved in `~/.config/qtile/weather-location` and the widget is asked to refresh immediately. Multi-word locations are URL-encoded. Weather requires a working network connection, `curl`, and Python 3.
 
 ## Theming and wallpaper
 
