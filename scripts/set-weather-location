@@ -1,16 +1,38 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
 LOCATION_FILE="$CONFIG_DIR/weather-location"
 THEME="$CONFIG_DIR/themes/catppuccin-mocha.rasi"
 mkdir -p "$CONFIG_DIR"
+
 current="auto"
-[[ -r "$LOCATION_FILE" ]] && IFS= read -r current < "$LOCATION_FILE" || true
+if [[ -r "$LOCATION_FILE" ]]; then
+  IFS= read -r current < "$LOCATION_FILE" || true
+fi
+
 if ! command -v rofi >/dev/null 2>&1; then
-  notify-send "Qtile-Con" "Rofi is required to change the weather location."
+  command -v notify-send >/dev/null 2>&1 && notify-send "Qtile-Con" "Rofi is required to change the weather location."
   exit 1
 fi
-location="$(rofi -dmenu -i -p "Weather location" -mesg "Enter a city, e.g. London, UK" -theme "$THEME" <<< "$current" || true)"
+
+location="$(rofi -dmenu -i -p "󰖩 Weather location" \
+  -mesg "Enter a city or 'auto' for automatic detection" \
+  -filter "$current" -theme "$THEME" </dev/null || true)"
+# Escape/Cancel leaves the existing location unchanged.
 [[ -n "${location//[[:space:]]/}" ]] || exit 0
+location="$(printf '%s' "$location" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 printf '%s\n' "$location" > "$LOCATION_FILE"
-notify-send "Qtile-Con" "Weather location set to: $location"
+
+# Ask the running Qtile widget to refresh immediately; polling remains a fallback.
+qtile_bin="$(command -v qtile || true)"
+if [[ -z "$qtile_bin" && -x "$HOME/.local/bin/qtile" ]]; then
+  qtile_bin="$HOME/.local/bin/qtile"
+fi
+if [[ -n "$qtile_bin" ]]; then
+  "$qtile_bin" cmd-obj -o widget weather -f force_update >/dev/null 2>&1 || true
+fi
+
+if command -v notify-send >/dev/null 2>&1; then
+  notify-send "Qtile-Con" "Weather location set to: $location"
+fi
