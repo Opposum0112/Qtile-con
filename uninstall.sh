@@ -26,7 +26,8 @@ fi
 BACKUP="${TARGET}.removed.$(date +%Y%m%d-%H%M%S)"
 echo "Configuration to move: $TARGET"
 echo "Backup destination:    $BACKUP"
-echo "Packages, wallpapers and screenshots will not be removed."
+echo "Only the Qtile configuration will be moved; system packages, wallpapers and screenshots are preserved."
+echo "Openbox/LXDE packages are left untouched because they may belong to another desktop installation."
 
 if [[ "$DRY_RUN" == 1 ]]; then
   echo "Dry run: no files changed."

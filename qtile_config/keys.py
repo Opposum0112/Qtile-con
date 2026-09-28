@@ -16,7 +16,7 @@ keys = [
     Key([MOD], "Print", lazy.spawn(f"{SCRIPTS}/screenshot full")),
     Key([MOD, "ctrl"], "r", lazy.restart()),
     Key([MOD, "shift"], "q", lazy.window.kill()),
-    Key([MOD, "shift"], "e", lazy.spawn("lxsession-logout")),
+    Key([MOD, "shift"], "e", lazy.spawn(f"{SCRIPTS}/logout-menu")),
     Key([MOD], "Escape", lazy.spawn("i3lock")),
     Key([MOD], "Left", lazy.layout.left()),
     Key([MOD], "Right", lazy.layout.right()),
