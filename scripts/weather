@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
-set -euo pipefail
-location="${QTILE_WEATHER_LOCATION:-auto}"
-command -v curl >/dev/null 2>&1 || { echo "Weather: install curl"; exit 0; }
-curl -fsS --max-time 4 "https://wttr.in/${location}?format=%c+%t" 2>/dev/null | head -c 80 || true
+set -Eeuo pipefail
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+LOCATION_FILE="$CONFIG_DIR/weather-location"
+location="${QTILE_WEATHER_LOCATION:-}"
+if [[ -z "$location" && -r "$LOCATION_FILE" ]]; then
+  IFS= read -r location < "$LOCATION_FILE" || true
+fi
+location="${location:-auto}"
+if ! command -v curl >/dev/null 2>&1; then echo "Weather: install curl"; exit 0; fi
+encoded_location="$(printf '%s' "$location" | sed 's/ /+/g')"
+if ! output="$(curl -fsS --connect-timeout 3 --max-time 8 -G \
+  --data-urlencode 'format=%l: %c %t' \
+  "https://wttr.in/$encoded_location" 2>/dev/null)"; then
+  echo "Weather unavailable"
+  exit 0
+fi
+printf '%s\n' "$output" | head -c 100
