@@ -10,7 +10,7 @@
 
 ## Prerequisites
 
-This project targets **Qtile on X11/Xorg**, not a Wayland session. Before logging out, confirm that Qtile is installed with its X11 dependencies, an Xorg server is available, and your display manager can launch a Qtile X11 session. Required utilities include Python 3, Rofi, `xterm` (default terminal), `feh`, `maim`, `xclip`, `xsel`, `playerctl`, `curl`, `jq`, desktop notifications and a Nerd Font. Optional integrations include `greenclip`, `btop`, `pavucontrol`, `pamixer`, `brightnessctl`, `nm-applet`, `i3lock`, `lxsession-logout` and `pywal`.
+This project targets **Qtile on X11/Xorg**, not a Wayland session. Before logging out, confirm that Qtile is installed with its X11 dependencies, an Xorg server is available, and your display manager can launch a Qtile X11 session. Required utilities include Python 3, Rofi, `xterm` (default terminal), `feh`, `maim`, `xclip`, `xsel`, `playerctl`, `curl`, `jq`, desktop notifications and a Nerd Font. Optional integrations include `greenclip`, `btop`, `pavucontrol`, `pamixer`, `brightnessctl`, `nm-applet`, `i3lock`, `pywal`. Audio status supports `pactl`, `wpctl`, or `amixer`; `pavucontrol` and `pamixer` remain optional GUI/keybinding integrations.
 
 The installer can offer packages on Debian/Ubuntu, Fedora, Arch-family, openSUSE and Solus, but it does not install Xorg or configure your display-manager session.
 
@@ -19,6 +19,10 @@ The installer can offer packages on Debian/Ubuntu, Fedora, Arch-family, openSUSE
 This project targets Qtile's X11 backend. Use an Xorg session and select **Qtile (X11)** in the display manager. The configuration package is named `qtile_config` (not `config`) to avoid a module-name collision with the `config.py` entry point. The configuration remains modular and preserves the existing workspaces, layouts, Catppuccin themes, bar and keybindings.
 
 The X11 scripts use Rofi for menus, feh for wallpapers, maim for screenshots, xclip for clipboard integration and optional greenclip for clipboard history. Wayland-only tools (Fuzzel, swww, grim, slurp, wl-clipboard and cliphist) are not required.
+
+## Rofi, audio and weather
+
+Rofi menus use `themes/catppuccin-mocha.rasi` for the launcher, power menu and weather-location prompt. Click the weather text in the bar to save a city in `~/.config/qtile/weather-location`; the next polling cycle uses the saved city. The audio widget polls available PulseAudio/PipeWire/ALSA tools and returns a harmless `VOL N/A` status when no backend is detected.
 
 ## Themes and wallpapers
 

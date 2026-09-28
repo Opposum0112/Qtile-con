@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -u
+# Prefer PulseAudio/PipeWire; fall back to ALSA. Never fail the bar.
+if command -v pactl >/dev/null 2>&1; then
+  mute="$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | awk '{print $2}')"
+  volume="$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -oE '[0-9]+%' | head -n1 | tr -d '%')"
+  if [[ "$volume" =~ ^[0-9]+$ ]]; then
+    if [[ "$mute" == "yes" ]]; then printf '󰖁 %s%%' "$volume"; else printf '󰕾 %s%%' "$volume"; fi
+    exit 0
+  fi
+fi
+if command -v wpctl >/dev/null 2>&1; then
+  status="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || true)"
+  volume="$(awk '{if ($2 ~ /^[0-9]*\.?[0-9]+$/) printf "%d", $2 * 100}' <<< "$status")"
+  if [[ "$volume" =~ ^[0-9]+$ ]] && [[ -n "$status" ]]; then
+    if grep -q MUTED <<< "$status"; then printf '󰖁 %s%%' "$volume"; else printf '󰕾 %s%%' "$volume"; fi
+    exit 0
+  fi
+fi
+if command -v amixer >/dev/null 2>&1; then
+  status="$(amixer get Master 2>/dev/null || amixer get PCM 2>/dev/null || true)"
+  volume="$(grep -oE '[0-9]+%' <<< "$status" | head -n1 | tr -d '%')"
+  if [[ "$volume" =~ ^[0-9]+$ ]]; then
+    if grep -q '\[off\]' <<< "$status"; then printf '󰖁 %s%%' "$volume"; else printf '󰕾 %s%%' "$volume"; fi
+    exit 0
+  fi
+fi
+printf 'VOL N/A'

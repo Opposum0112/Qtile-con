@@ -50,11 +50,11 @@ The installer can attempt to install common dependencies on Debian/Ubuntu, Fedor
 
 - `greenclip`: clipboard history.
 - `btop`: system monitor.
-- `pavucontrol` and `pamixer`: audio controls.
+- `pavucontrol` and `pamixer`: graphical audio mixer and volume keybindings. The bar detects PulseAudio/PipeWire (`pactl`/`wpctl`) or falls back to ALSA (`amixer`), and displays `VOL N/A` rather than crashing if no backend is available.
 - `brightnessctl`: brightness keys.
 - `nm-connection-editor` / `nm-applet`: network controls.
 - `i3lock`: lock-screen shortcut.
-- `lxsession-logout`: logout menu.
+- `i3lock`: optional lock action in the Catppuccin-themed power menu.
 - `pywal` (the `wal` command): wallpaper palette generation.
 - `gnome-calendar`: calendar shortcut.
 
@@ -109,6 +109,8 @@ scripts/
   theme_apply.py
   wal_to_qtile.py
   weather
+  set-weather-location
+  volume-status
   screenshot
 themes/         # Catppuccin JSON presets
 docs/
@@ -116,6 +118,10 @@ docs/
 install.sh
 uninstall.sh
 ```
+
+## Rofi theme and weather location
+
+Rofi uses the included Catppuccin Mocha theme for the application launcher, weather-location prompt, and power menu. The weather widget defaults to automatic location detection. Click the weather text in the bar to enter a city (for example, `London, UK`); the choice is saved in `~/.config/qtile/weather-location`. Weather requires a working network connection and `curl`.
 
 ## Theming and wallpaper
 

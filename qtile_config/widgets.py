@@ -4,11 +4,43 @@ from libqtile import widget
 from qtile_config.colors import COLORS, BG, FG, ACCENT, MUTED
 from qtile_config.settings import FONT, FONT_SIZE, SCRIPTS, LAUNCHER, TERMINAL
 
+
 def spawn(*args):
-    subprocess.Popen(list(args))
+    """Launch a command without blocking the Qtile event loop."""
+    try:
+        subprocess.Popen(list(args), start_new_session=True)
+    except OSError:
+        return
+
 
 def action(command):
     return {"Button1": lambda: spawn(f"{SCRIPTS}/{command}")}
+
+
+def poll_script(name, fallback):
+    """Read a status script safely; keep failures from crashing a widget."""
+    def poll():
+        try:
+            result = subprocess.run(
+                [f"{SCRIPTS}/{name}"], capture_output=True, text=True,
+                timeout=8, check=False,
+            )
+            value = result.stdout.strip()
+            return value if result.returncode == 0 and value else fallback
+        except (OSError, subprocess.SubprocessError):
+            return fallback
+    return poll
+
+
+def open_audio_mixer():
+    try:
+        subprocess.Popen(["pavucontrol"], start_new_session=True)
+    except OSError:
+        try:
+            subprocess.Popen(["xterm", "-e", "alsamixer"], start_new_session=True)
+        except OSError:
+            return
+
 
 def build_widgets():
     return [
@@ -22,12 +54,11 @@ def build_widgets():
         widget.TextBox(text="󰘚 ", foreground=COLORS["blue"], background=BG),
         widget.Memory(format="{MemPercent}%", foreground=FG, background=BG, update_interval=5),
         widget.TextBox(text="󰖩 ", foreground=COLORS["teal"], background=BG, mouse_callbacks={"Button1": lambda: spawn("nm-connection-editor")}),
-        widget.GenPollText(func=lambda: subprocess.run([f"{SCRIPTS}/weather"], capture_output=True, text=True, timeout=4).stdout.strip() or "Weather unavailable", update_interval=900, foreground=FG, background=BG, mouse_callbacks={"Button1": lambda: spawn("rofi", "-dmenu", "-p", "Weather location:")}),
-        widget.TextBox(text="󰕾 ", foreground=COLORS["peach"], background=BG, mouse_callbacks={"Button1": lambda: spawn("pavucontrol")}),
-        widget.Volume(fmt="{volume}%", foreground=FG, background=BG, update_interval=2),
+        widget.GenPollText(func=poll_script("weather", "Weather unavailable"), update_interval=900, foreground=FG, background=BG, mouse_callbacks={"Button1": lambda: spawn(f"{SCRIPTS}/set-weather-location")}),
+        widget.GenPollText(func=poll_script("volume-status", "VOL N/A"), update_interval=5, foreground=COLORS["peach"], background=BG, mouse_callbacks={"Button1": open_audio_mixer}),
         widget.TextBox(text="󰸉 ", foreground=COLORS["pink"], background=BG, mouse_callbacks=action("set-wallpaper")),
         widget.TextBox(text="󰏘 ", foreground=COLORS["mauve"], background=BG, mouse_callbacks=action("set-theme")),
         widget.Clock(format=" %a %d %b   %H:%M", foreground=ACCENT, background=BG, fontsize=FONT_SIZE, update_interval=30, mouse_callbacks={"Button1": lambda: spawn("gnome-calendar")}),
         widget.Systray(background=BG, padding=8),
-        widget.TextBox(text=" ⏻ ", foreground=COLORS["red"], background=BG, mouse_callbacks={"Button1": lambda: spawn("lxsession-logout")}),
+        widget.TextBox(text=" ⏻ ", foreground=COLORS["red"], background=BG, mouse_callbacks=action("logout-menu")),
     ]
