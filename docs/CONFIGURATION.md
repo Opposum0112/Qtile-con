@@ -26,7 +26,7 @@ The X11 scripts use Rofi for menus, feh for wallpapers, maim for screenshots, xc
 
 Rofi menus use `themes/catppuccin-mocha.rasi` for the launcher, power menu and weather-location prompt. The launcher enables desktop icons using the Adwaita icon theme; icon rendering depends on installed desktop icon metadata. Click the weather text in the bar to save a city in `~/.config/qtile/weather-location`; the widget is asked to refresh immediately and also polls every five minutes. Multi-word locations are URL-encoded before being sent to wttr.in. The audio widget polls available PulseAudio/PipeWire/ALSA tools and returns a harmless `VOL N/A` status when no backend is detected.
 
-## Themes and wallpapers
+## Touchpad swipe gestures\n\nOn X11, install `libinput-gestures` and `xdotool`, copy `gestures/libinput-gestures.conf` to `~/.config/libinput-gestures.conf`, then run `libinput-gestures-setup restart`. The gestures invoke Super+Alt shortcuts defined in `qtile_config/keys.py`. Confirm your touchpad exposes the required multitouch gestures and that the libinput-gestures user service is running.\n\n## Themes and wallpapers
 
 Put PNG, JPEG or WebP files in `~/Pictures/Wallpapers`, then use Super+Shift+W. Theme JSON files live in `themes/`. Required palette keys are `base`, `text`, `mauve`, `overlay`, and `surface0`.
 
