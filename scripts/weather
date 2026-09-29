@@ -10,17 +10,29 @@ if [[ -z "$location" && -r "$LOCATION_FILE" ]]; then
 fi
 location="${location:-auto}"
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "Weather: install curl"
-  exit 0
-fi
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Weather: install python3"
+weather_json() {
+  python3 - "$@" <<'PY'
+import json
+import sys
+
+fields = (sys.argv[1:] + [""] * 6)[:6]
+location, condition, temperature, feels_like, humidity, wind = fields
+print(json.dumps({
+    "location": location.strip(),
+    "condition": condition.strip(),
+    "temperature": temperature.strip(),
+    "feels_like": feels_like.strip(),
+    "humidity": humidity.strip(),
+    "wind": wind.strip(),
+}, ensure_ascii=False))
+PY
+}
+
+if ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+  weather_json "" "" "" "" "" ""
   exit 0
 fi
 
-# wttr.in expects URL-escaped locations in the URL path. Replacing spaces
-# with '+' is form encoding and can make multi-word city names fail.
 if [[ "$location" == "auto" ]]; then
   url="https://wttr.in/"
 else
@@ -31,15 +43,11 @@ fi
 if ! output="$(curl -fsS --connect-timeout 4 --max-time 12 \
   --retry 1 --retry-delay 1 \
   -H 'Cache-Control: no-cache' \
-  -G --data-urlencode 'format=%l: %c %t' \
+  -G --data-urlencode 'format=%l|%c|%t|%f|%h|%w' \
   "$url" 2>/dev/null)"; then
-  echo "Weather unavailable"
+  weather_json "" "" "" "" "" ""
   exit 0
 fi
 
-output="$(printf '%s' "$output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-if [[ -z "$output" || "$output" == *"Unknown location"* ]]; then
-  echo "Weather unavailable"
-else
-  printf '%s\n' "$output" | cut -c1-100
-fi
+IFS='|' read -r place condition temperature feels_like humidity wind <<< "$output"
+weather_json "$place" "$condition" "$temperature" "$feels_like" "$humidity" "$wind"
