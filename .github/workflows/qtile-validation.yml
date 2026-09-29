@@ -1,0 +1,28 @@
+name: Qtile config validation
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Qtile
+        run: python -m pip install --upgrade pip qtile
+      - name: Compile Python configuration
+        run: python -m compileall -q config.py qtile_config tests
+      - name: Validate shell scripts
+        run: |
+          bash -n scripts/weather
+          bash -n scripts/check-config
+      - name: Test weather display and tooltip
+        run: python -m unittest discover -s tests -v
+      - name: Validate Qtile configuration
+        run: qtile check -c config.py
