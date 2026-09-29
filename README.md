@@ -8,7 +8,7 @@ A modular Qtile desktop configuration for **X11**, inspired by Dank Material She
 
 - Qtile's X11 backend with modular Python configuration.
 - Catppuccin Mocha default and Latte, Frappe theme presets.
-- Bar with workspaces, focused window, CPU, RAM used/total/percentage, weather, volume, clock, tray and action icons.
+- Spaced Catppuccin capsule bar with workspaces, focused window, CPU, RAM used/total/percentage, temperature-only weather (hover for details), volume, clock, tray and action icons.
 - Catppuccin Mocha styling shared by Rofi and Alacritty.
 - Rofi launcher and interactive layout, wallpaper, theme and clipboard pickers.
 - Wallpaper selection via `feh`; optional `pywal` palette generation updates Qtile colors.
@@ -120,9 +120,9 @@ install.sh
 uninstall.sh
 ```
 
-## Alacritty theme\n\nThe repository includes a Catppuccin Mocha Alacritty palette and a starter `alacritty/alacritty.toml`. The installer copies the palette to `~/.config/alacritty/qtile-con-catppuccin-mocha.toml`; it creates `~/.config/alacritty/alacritty.toml` only when one does not already exist. Existing Alacritty configuration is preserved. To enable the theme in an existing configuration, add:\n\n```toml\ngeneral.import = ["~/.config/alacritty/qtile-con-catppuccin-mocha.toml"]\n```\n\nThe bar shows RAM used, total RAM in MiB, and percentage, for example `3200/15800M (20%)`.\n\n## Rofi theme and weather location
+## Alacritty theme\n\nThe repository includes a Catppuccin Mocha Alacritty palette and a starter `alacritty/alacritty.toml`. The installer copies the palette to `~/.config/alacritty/qtile-con-catppuccin-mocha.toml`; it creates `~/.config/alacritty/alacritty.toml` only when one does not already exist. Existing Alacritty configuration is preserved. To enable the theme in an existing configuration, add:\n\n```toml\ngeneral.import = ["~/.config/alacritty/qtile-con-catppuccin-mocha.toml"]\n```\n\nThe bar shows RAM used, total RAM in MiB, and percentage, for example `3200/15800M (20%)`.\n\n## Touchpad swipe gestures\n\nOptional X11 gestures use `libinput-gestures` and `xdotool`. Install both, copy `gestures/libinput-gestures.conf` to `~/.config/libinput-gestures.conf`, then run `libinput-gestures-setup restart`. Three-finger left/right switches workspaces and up/down cycles layouts; four-finger up toggles fullscreen, down toggles floating, and left/right opens the launcher. Gestures depend on touchpad/libinput support and the user service being active.\n\n## Rofi theme and weather location
 
-Rofi uses the included Catppuccin Mocha theme for the application launcher, weather-location prompt, and power menu. The application launcher enables desktop icons using the Adwaita icon theme (with the system icon theme as a fallback). The weather widget defaults to automatic location detection and refreshes every five minutes. Click the weather text in the bar to enter a city (for example, `London, UK`); the choice is saved in `~/.config/qtile/weather-location` and the widget is asked to refresh immediately. Multi-word locations are URL-encoded. Weather requires a working network connection, `curl`, and Python 3.
+Rofi uses the included Catppuccin Mocha theme for the application launcher, weather-location prompt, and power menu. The application launcher enables desktop icons using the Adwaita icon theme (with the system icon theme as a fallback). The weather widget shows only the current temperature in the bar; hover for location, conditions, feels-like temperature, humidity and wind. It defaults to automatic location detection and refreshes every five minutes. Click the weather text in the bar to enter a city (for example, `London, UK`); the choice is saved in `~/.config/qtile/weather-location` and the widget is asked to refresh immediately. Multi-word locations are URL-encoded. Weather requires a working network connection, `curl`, and Python 3.
 
 ## Theming and wallpaper
 
