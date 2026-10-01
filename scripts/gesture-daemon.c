@@ -47,11 +47,14 @@ static void remove_pid_file(void) {
 static void cleanup_and_exit(int sig) {
     (void)sig;
     remove_pid_file();
-    if (dpy) {
-        XCloseDisplay(dpy);
-        dpy = NULL;
-    }
     _exit(0);
+}
+
+static int custom_x_io_error_handler(Display *d) {
+    (void)d;
+    remove_pid_file();
+    _exit(0);
+    return 0;
 }
 
 static int x_error_occurred = 0;
@@ -242,21 +245,26 @@ int main(int argc, char **argv) {
     }
 
     if (kill_mode || restart_mode) {
-        if (existing_pid > 0) {
+        if (existing_pid > 0 && existing_pid != getpid()) {
             kill(existing_pid, SIGTERM);
-            usleep(150000);
+            usleep(100000);
             if (kill(existing_pid, 0) == 0) {
                 kill(existing_pid, SIGKILL);
+                usleep(50000);
             }
-            remove_pid_file();
-            printf("[OK] Stopped existing gesture-daemon (PID: %d).\n", existing_pid);
-        } else {
-            if (kill_mode) {
-                printf("[INFO] No existing gesture-daemon was running.\n");
-                return 0;
+            if (verbose_mode) {
+                printf("[OK] Stopped existing gesture-daemon (PID: %d).\n", existing_pid);
             }
         }
-        if (kill_mode) return 0;
+        remove_pid_file();
+        if (kill_mode) {
+            if (existing_pid == 0) {
+                printf("[INFO] No existing gesture-daemon was running.\n");
+            } else {
+                printf("[OK] Stopped gesture-daemon.\n");
+            }
+            return 0;
+        }
     } else if (existing_pid > 0) {
         if (verbose_mode) {
             printf("[INFO] gesture-daemon already running (PID: %d).\n", existing_pid);
@@ -277,7 +285,7 @@ int main(int argc, char **argv) {
 
     signal(SIGINT, cleanup_and_exit);
     signal(SIGTERM, cleanup_and_exit);
-    signal(SIGHUP, SIG_IGN);
+    signal(SIGHUP, cleanup_and_exit);
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
 
@@ -289,6 +297,7 @@ int main(int argc, char **argv) {
     }
 
     XSetErrorHandler(custom_x_error_handler);
+    XSetIOErrorHandler(custom_x_io_error_handler);
 
     int xi_opcode, event, error;
     if (!XQueryExtension(dpy, "XInputExtension", &xi_opcode, &event, &error)) {

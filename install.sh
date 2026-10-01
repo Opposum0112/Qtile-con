@@ -626,7 +626,7 @@ if [[ -f "$ROOT/scripts/gesture-daemon.c" ]]; then
   if [[ ! -x "$ROOT/scripts/gesture-daemon" ]] || [[ "$ROOT/scripts/gesture-daemon.c" -nt "$ROOT/scripts/gesture-daemon" ]]; then
     if command -v gcc >/dev/null 2>&1; then
       echo "Compiling native sub-millisecond X11 gesture daemon..."
-      gcc -O2 -Wall "$ROOT/scripts/gesture-daemon.c" -lX11 -lXtst -o "$ROOT/scripts/gesture-daemon" 2>/dev/null && chmod +x "$ROOT/scripts/gesture-daemon" || true
+      gcc -O2 -Wall "$ROOT/scripts/gesture-daemon.c" -lX11 -lXtst -lXi -o "$ROOT/scripts/gesture-daemon" 2>/dev/null && chmod +x "$ROOT/scripts/gesture-daemon" || true
     fi
   else
     echo "[OK] Native gesture daemon is already compiled and up to date."
@@ -681,6 +681,20 @@ if [[ ! -f "$HOME/.config/libinput-gestures.conf" ]] || ! cmp -s "$ROOT/gestures
   cp -f "$ROOT/gestures/libinput-gestures.conf" "$HOME/.config/libinput-gestures.conf"
 fi
 add_unique CREATED_FILES "$HOME/.config/libinput-gestures.conf"
+
+# Deploy gesture-daemon autostart desktop entry
+mkdir -p "$HOME/.config/autostart"
+cat << 'EOF' > "$HOME/.config/autostart/qtile-gesture-daemon.desktop"
+[Desktop Entry]
+Type=Application
+Name=Qtile Gesture Daemon
+Comment=Native X11 Multi-touch Gesture Daemon for Qtile
+Exec=/bin/sh -c 'sleep 1 && "${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/gesture-daemon" --restart'
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+EOF
+add_unique CREATED_FILES "$HOME/.config/autostart/qtile-gesture-daemon.desktop"
 
 # Deploy Alacritty configuration & theme
 mkdir -p "$ALACRITTY_CONFIG_DIR"

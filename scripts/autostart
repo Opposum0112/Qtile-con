@@ -88,13 +88,18 @@ fi
 
 # Multi-touch gestures: prefer libinput-gestures when in 'input' group, or native daemon
 if command -v libinput-gestures >/dev/null 2>&1 && groups | grep -qw "input"; then
-  pgrep -x libinput-gestures >/dev/null 2>&1 || libinput-gestures-setup start >/dev/null 2>&1 || nohup libinput-gestures >/dev/null 2>&1 &
+  libinput-gestures-setup restart >/dev/null 2>&1 || nohup libinput-gestures >/dev/null 2>&1 &
 else
   # Native fast X11 gesture daemon (libinput Xorg driver + XTest injection)
   gesture_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/gesture-daemon"
   [[ -x "$gesture_bin" ]] || gesture_bin="$(dirname "$0")/gesture-daemon"
   if [[ -x "$gesture_bin" ]]; then
-    pgrep -x gesture-daemon >/dev/null 2>&1 || nohup "$gesture_bin" >/dev/null 2>&1 &
+    # Always restart gesture daemon on session login to guarantee fresh binding to the active X11 display
+    "$gesture_bin" --restart >/dev/null 2>&1 || {
+      pkill -9 -x gesture-daemon 2>/dev/null || true
+      sleep 0.1
+      nohup "$gesture_bin" >/dev/null 2>&1 &
+    }
   fi
 fi
 
