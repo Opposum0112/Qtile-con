@@ -44,10 +44,10 @@
             "format": "Qtile (X11)"
         },
         {
-            "type": "custom",
+            "type": "command",
             "key": "\udb81\udd70 Layout  ",
             "keyColor": "38;2;148;226;213",
-            "format": "Niri Scroller Ribbon"
+            "text": "sh -c '[ -s \"$HOME/.cache/qtile-current-layout\" ] && cat \"$HOME/.cache/qtile-current-layout\" || echo \"Niri Scroller Ribbon\"'"
         },
         {
             "type": "terminal",
@@ -62,10 +62,10 @@
             "format": "{pretty-name}"
         },
         {
-            "type": "custom",
+            "type": "command",
             "key": "\udb80\udfd8 Theme   ",
             "keyColor": "38;2;250;179;135",
-            "format": "Catppuccin Mocha"
+            "text": "sh -c '[ -s \"$HOME/.cache/qtile-current-theme\" ] && cat \"$HOME/.cache/qtile-current-theme\" || echo \"Catppuccin Mocha\"'"
         },
         {
             "type": "memory",

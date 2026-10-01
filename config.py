@@ -34,6 +34,55 @@ from qtile_config.settings import MOD, TERMINAL
 from qtile_config.widgets import widget_defaults, extension_defaults
 
 
+LAYOUT_NAMES = {
+    "scroller": "Niri Scroller Ribbon",
+    "columns": "Columns Tiling",
+    "monadtall": "MonadTall Master/Stack",
+    "monadwide": "MonadWide Ribbon",
+    "matrix": "Matrix Grid",
+    "tile": "Tile Layout",
+    "floating": "Floating Windows",
+    "max": "Max Fullscreen",
+}
+
+
+def update_cached_layout(layout_name: str):
+    """Write current active layout name to user cache for fastfetch and status tools."""
+    cache_dir = os.path.expanduser("~/.cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    hname = LAYOUT_NAMES.get(layout_name.lower(), layout_name.title())
+    try:
+        with open(os.path.join(cache_dir, "qtile-current-layout"), "w", encoding="utf-8") as f:
+            f.write(hname + "\n")
+    except Exception:
+        pass
+
+
+@hook.subscribe.layout_change
+def on_layout_change(layout, group):
+    """Update cached layout state for dynamic status widgets and fastfetch."""
+    if layout and hasattr(layout, "name"):
+        update_cached_layout(layout.name)
+
+
+@hook.subscribe.setgroup
+def on_setgroup():
+    """Update cached layout state when switching active workspace groups."""
+    from libqtile import qtile
+    if qtile and qtile.current_group and qtile.current_group.current_layout:
+        update_cached_layout(qtile.current_group.current_layout.name)
+
+
+@hook.subscribe.startup
+def on_startup():
+    """Update cached layout state on startup/reload."""
+    from libqtile import qtile
+    if qtile and qtile.current_group and qtile.current_group.current_layout:
+        update_cached_layout(qtile.current_group.current_layout.name)
+    else:
+        update_cached_layout("scroller")
+
+
 @hook.subscribe.startup_once
 def autostart():
     """Execute session autostart script on initial desktop login."""

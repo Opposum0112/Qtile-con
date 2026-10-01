@@ -1345,6 +1345,14 @@ def apply_fastfetch(palette, theme_name):
         f"    \u001b[1;38;2;{r_mauve};{g_mauve};{b_mauve}mQTILE\u001b[0m   "
     )
 
+    # Update cached theme title
+    user_theme_cache = Path.home() / ".cache" / "qtile-current-theme"
+    try:
+        user_theme_cache.parent.mkdir(parents=True, exist_ok=True)
+        user_theme_cache.write_text(title + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
     fastfetch_config = {
         "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
         "logo": {
@@ -1365,10 +1373,10 @@ def apply_fastfetch(palette, theme_name):
             { "type": "kernel",   "key": " Kernel  ", "keyColor": f"38;2;{r_lav};{g_lav};{b_lav}", "format": "{release}" },
             { "type": "uptime",   "key": " Uptime  ", "keyColor": f"38;2;{r_blue};{g_blue};{b_blue}" },
             { "type": "wm",       "key": " WM      ", "keyColor": f"38;2;{r_sky};{g_sky};{b_sky}", "format": "Qtile (X11)" },
-            { "type": "custom",   "key": "󰕰 Layout  ", "keyColor": f"38;2;{r_teal};{g_teal};{b_teal}", "format": "Niri Scroller Ribbon" },
+            { "type": "command",  "key": "󰕰 Layout  ", "keyColor": f"38;2;{r_teal};{g_teal};{b_teal}", "text": "sh -c '[ -s \"$HOME/.cache/qtile-current-layout\" ] && cat \"$HOME/.cache/qtile-current-layout\" || echo \"Niri Scroller Ribbon\"'" },
             { "type": "terminal", "key": " Terminal", "keyColor": f"38;2;{r_green};{g_green};{b_green}", "format": "{pretty-name}" },
             { "type": "shell",    "key": " Shell   ", "keyColor": f"38;2;{r_yel};{g_yel};{b_yel}", "format": "{pretty-name}" },
-            { "type": "custom",   "key": "󰏘 Theme   ", "keyColor": f"38;2;{r_peach};{g_peach};{b_peach}", "format": title },
+            { "type": "command",  "key": "󰏘 Theme   ", "keyColor": f"38;2;{r_peach};{g_peach};{b_peach}", "text": f"sh -c '[ -s \"$HOME/.cache/qtile-current-theme\" ] && cat \"$HOME/.cache/qtile-current-theme\" || echo \"{title}\"'" },
             { "type": "memory",   "key": " Memory  ", "keyColor": f"38;2;{r_red};{g_red};{b_red}", "format": "{used} / {total}" },
             { "type": "custom", "format": f"\u001b[38;2;{r_s1};{g_s1};{b_s1}m──────────────────────────────────────────\u001b[0m" },
             { "type": "colors", "symbol": "circle" }
