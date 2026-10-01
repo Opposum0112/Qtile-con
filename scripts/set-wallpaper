@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""Interactive wallpaper and font selector with live graphical thumbnail grid in Rofi."""
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def get_grid_theme():
+    """Locate the Catppuccin Mocha Grid Rofi theme."""
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    theme = os.environ.get("QTILE_ROFI_GRID_THEME", str(config_dir / "themes/catppuccin-mocha-grid.rasi"))
+    if not os.path.isfile(theme):
+        repo_theme = Path(__file__).resolve().parent.parent / "themes/catppuccin-mocha-grid.rasi"
+        if repo_theme.is_file():
+            theme = str(repo_theme)
+    if not os.path.isfile(theme):
+        normal_theme = config_dir / "themes/catppuccin-mocha.rasi"
+        if normal_theme.is_file():
+            theme = str(normal_theme)
+    return theme if os.path.isfile(theme) else ""
+
+
+def notify(title, message, icon=None):
+    """Send desktop notification safely."""
+    if shutil.which("notify-send"):
+        cmd = ["notify-send"]
+        if icon and os.path.isfile(icon):
+            cmd.extend(["-i", str(icon)])
+        cmd.extend([title, message])
+        subprocess.run(cmd, stderr=subprocess.DEVNULL)
+
+
+def get_installed_nerd_fonts():
+    """Discover all installed unique Nerd Font families and their representative TTF/OTF files."""
+    try:
+        out = subprocess.check_output(["fc-list", ":", "family", "file"], text=True, stderr=subprocess.DEVNULL)
+    except Exception:
+        return {}
+
+    fonts = {}
+    for line in out.strip().splitlines():
+        if not line or ":" not in line:
+            continue
+        path, families = line.split(":", 1)
+        path = path.strip()
+        for fam in families.split(","):
+            fam = fam.strip()
+            if "nerd font" in fam.lower():
+                # Filter out sub-weights to maintain a clean list of primary families
+                if any(w in fam.split() for w in ["Light", "Med", "Ret", "SemBd", "Thin", "ExtraLight", "SmBd", "Lt", "Md", "Th"]):
+                    continue
+                if "symbols" in fam.lower():
+                    continue
+                if fam not in fonts or "Regular" in path or "Medium" in path or "Bold" in path:
+                    fonts[fam] = path
+    return fonts
+
+
+def generate_font_thumbnail(family, font_path, out_file):
+    """Render an aesthetic 240x120 Catppuccin preview card for a font family."""
+    if shutil.which("convert"):
+        cmd = [
+            "convert", "-size", "240x120", "xc:#1e1e2e",
+            "-stroke", "#45475a", "-fill", "#181825", "-draw", "roundrectangle 2,2 237,117 8,8",
+            "-stroke", "none", "-fill", "#cba6f7", "-font", font_path, "-pointsize", "13", "-gravity", "north", "-draw", f'text 0,12 "{family}"',
+            "-fill", "#cdd6f4", "-font", font_path, "-pointsize", "15", "-gravity", "center", "-draw", 'text 0,4 "AaBb 0123 !@#"',
+            "-fill", "#89b4fa", "-font", font_path, "-pointsize", "12", "-gravity", "south", "-draw", 'text 0,12 "=> != <= && || 󰍹"',
+            str(out_file),
+        ]
+        subprocess.run(cmd, stderr=subprocess.DEVNULL)
+
+
+def choose_font():
+    """Interactive font family selector with graphical font preview thumbnails."""
+    fonts = get_installed_nerd_fonts()
+    if not fonts:
+        notify("Font Picker", "No Nerd Fonts found on the system.")
+        return
+
+    font_cache = Path.home() / ".cache/qtile/font-thumbs"
+    font_cache.mkdir(parents=True, exist_ok=True)
+
+    lines = []
+    for fam in sorted(fonts.keys()):
+        font_path = fonts[fam]
+        safe_name = fam.replace(" ", "_") + ".png"
+        thumb = font_cache / safe_name
+        if not thumb.is_file():
+            generate_font_thumbnail(fam, font_path, thumb)
+
+        icon_attr = str(thumb) if thumb.is_file() else "preferences-desktop-font"
+        lines.append(f"{fam}\0icon\x1f{icon_attr}")
+
+    lines.append("󰅖  Cancel\0icon\x1fdialog-cancel")
+
+    theme = get_grid_theme()
+    rofi_cmd = ["rofi", "-dmenu", "-show-icons", "-i", "-p", "Select Font Family > "]
+    if theme:
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    choice, _ = proc.communicate(input="\n".join(lines) + "\n")
+    choice = (choice or "").strip()
+
+    if not choice or "Cancel" in choice or choice not in fonts:
+        return
+
+    selected_font = choice
+
+    # 1. Update qtile_config/settings.py in ~/.config/qtile and repo
+    settings_targets = [
+        Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile/qtile_config/settings.py",
+        Path(__file__).resolve().parent.parent / "qtile_config/settings.py",
+    ]
+    for target in settings_targets:
+        if target.is_file():
+            try:
+                content = target.read_text()
+                content = re.sub(r'FONT\s*=\s*"[^"]*"', f'FONT = "{selected_font}"', content)
+                target.write_text(content)
+            except Exception:
+                pass
+
+    # 2. Update Alacritty font family
+    alacritty_conf = Path.home() / ".config/alacritty/alacritty.toml"
+    if alacritty_conf.is_file():
+        try:
+            content = alacritty_conf.read_text()
+            content = re.sub(r'family\s*=\s*"[^"]*Nerd Font[^"]*"', f'family = "{selected_font}"', content)
+            alacritty_conf.write_text(content)
+        except Exception:
+            pass
+
+    # 3. Reload Qtile configuration to update bar font immediately
+    subprocess.run(["qtile", "cmd-obj", "-o", "cmd", "-f", "restart"], stderr=subprocess.DEVNULL)
+    notify("Font Updated", f"System font set to: {selected_font}")
+
+
+def generate_wallpaper_thumbnail(image_path, out_file):
+    """Generate a crisp 240x150 thumbnail card for a wallpaper."""
+    if shutil.which("convert"):
+        cmd = ["convert", str(image_path), "-thumbnail", "240x150^", "-gravity", "center", "-extent", "240x150", str(out_file)]
+        subprocess.run(cmd, stderr=subprocess.DEVNULL)
+
+
+def choose_wallpaper():
+    """Interactive wallpaper selector with 3x3 graphical thumbnail preview cards."""
+    wall_dir = Path(os.environ.get("QTILE_WALLPAPER_DIR", Path.home() / "Pictures/Wallpapers"))
+    wall_dir.mkdir(parents=True, exist_ok=True)
+
+    if not shutil.which("rofi"):
+        notify("Qtile", "Install rofi to select wallpapers.")
+        return
+
+    # Scan for wallpapers
+    valid_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+    wallpapers = sorted([f for f in wall_dir.iterdir() if f.is_file() and f.suffix.lower() in valid_exts])
+    if not wallpapers:
+        notify("Qtile", f"Add images to {wall_dir} first.")
+        return
+
+    # Thumbnail cache directory
+    wall_cache = Path.home() / ".cache/qtile/wallpaper-thumbs"
+    wall_cache.mkdir(parents=True, exist_ok=True)
+
+    # Ensure all thumbnails exist and are updated
+    for w in wallpapers:
+        thumb = wall_cache / f"{w.name}.png"
+        if not thumb.is_file() or w.stat().st_mtime > thumb.stat().st_mtime:
+            generate_wallpaper_thumbnail(w, thumb)
+
+    # Build Rofi entries
+    lines = []
+    lines.append("󰬚  Change Font Mode\0icon\x1fpreferences-desktop-font")
+    for w in wallpapers:
+        thumb = wall_cache / f"{w.name}.png"
+        icon_path = str(thumb) if thumb.is_file() else str(w)
+        lines.append(f"{w.name}\0icon\x1f{icon_path}")
+    lines.append("󰅖  Cancel\0icon\x1fdialog-cancel")
+
+    theme = get_grid_theme()
+    rofi_cmd = ["rofi", "-dmenu", "-show-icons", "-i", "-p", "Wallpapers > "]
+    if theme:
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    choice, _ = proc.communicate(input="\n".join(lines) + "\n")
+    choice = (choice or "").strip()
+
+    if not choice or "Cancel" in choice:
+        return
+
+    if "Change Font Mode" in choice:
+        choose_font()
+        return
+
+    selected_file = wall_dir / choice
+    if not selected_file.is_file():
+        return
+
+    # Apply wallpaper with feh
+    if not shutil.which("feh"):
+        notify("Qtile", "Install feh to set wallpapers.")
+        return
+
+    subprocess.run(["feh", "--no-fehbg", "--bg-fill", str(selected_file)], stderr=subprocess.DEVNULL)
+    cache_wp = Path.home() / ".cache/qtile-wallpaper"
+    cache_wp.parent.mkdir(parents=True, exist_ok=True)
+    cache_wp.write_text(str(selected_file) + "\n")
+
+    # Sync palette with pywal if available
+    if shutil.which("wal"):
+        subprocess.run(["wal", "-i", str(selected_file), "-n"], stderr=subprocess.DEVNULL)
+        wal_script = Path(__file__).resolve().parent / "wal_to_qtile.py"
+        if wal_script.is_file():
+            subprocess.run([sys.executable, str(wal_script)], stderr=subprocess.DEVNULL)
+        subprocess.run(["qtile", "cmd-obj", "-o", "cmd", "-f", "restart"], stderr=subprocess.DEVNULL)
+
+    notify("Wallpaper Set", choice, icon=str(selected_file))
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("--font", "font"):
+        choose_font()
+    else:
+        choose_wallpaper()
+
+
+if __name__ == "__main__":
+    main()

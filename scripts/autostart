@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Script: autostart
+# Purpose: Initialize Qtile desktop environment daemons and session services.
+# Resource Optimization: Keeps idle memory strictly under 800 MB post-login.
+# ==============================================================================
+set -euo pipefail
+
+# Ensure standard UTF-8 locale environment across all child processes
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+if [[ "$LANG" != *.[Uu][Tt][Ff]* ]]; then
+  export LANG="en_US.UTF-8"
+  export LC_ALL="en_US.UTF-8"
+fi
+
+# Enrich PATH with system and user binary locations
+export PATH="$HOME/.cargo/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$HOME/.linuxbrew/bin:$HOME/.linuxbrew/sbin:$HOME/.local/bin:$HOME/.local/share/pipx/venvs/qtile/bin:$HOME/go/bin:/usr/local/go/bin:/snap/bin:/var/lib/flatpak/exports/bin:$HOME/.local/share/flatpak/exports/bin:$HOME/.config/qtile/scripts:$HOME/scripts:/usr/local/sbin:/usr/sbin:/sbin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+
+# Authorize root user to connect to the X11 display server for elevated GUI tools (e.g. GParted, Synaptic)
+if command -v xhost >/dev/null 2>&1; then
+  xhost +SI:localuser:root >/dev/null 2>&1 || true
+fi
+
+# Guarantee required cache and media directories exist
+mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/Pictures/Screenshots" "$HOME/.cache" "$HOME/.config/autostart"
+
+# ------------------------------------------------------------------------------
+# 1. GRAPHICAL POLICYKIT AUTHENTICATION AGENT (lxpolkit / polkit-gnome)
+# ------------------------------------------------------------------------------
+# Resolves GUI root elevation dialogs (e.g., GParted, synaptic, pkexec)
+if ! pgrep -x lxpolkit >/dev/null 2>&1 && ! pgrep -f "polkit.*authentication-agent" >/dev/null 2>&1; then
+  if command -v lxpolkit >/dev/null 2>&1; then
+    nohup lxpolkit >/dev/null 2>&1 &
+  elif [[ -x /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 ]]; then
+    nohup /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 >/dev/null 2>&1 &
+  elif [[ -x /usr/lib/x86_64-linux-gnu/libexec/polkit-kde-authentication-agent-1 ]]; then
+    nohup /usr/lib/x86_64-linux-gnu/libexec/polkit-kde-authentication-agent-1 >/dev/null 2>&1 &
+  fi
+fi
+
+# ------------------------------------------------------------------------------
+# 2. WALLPAPER RESTORATION
+# ------------------------------------------------------------------------------
+# Restore last wallpaper selected with set-wallpaper via feh
+state="$HOME/.cache/qtile-wallpaper"
+if command -v feh >/dev/null 2>&1 && [[ -r "$state" ]]; then
+  wallpaper="$(cat "$state")"
+  [[ -f "$wallpaper" ]] && feh --no-fehbg --bg-fill "$wallpaper" &
+fi
+
+# ------------------------------------------------------------------------------
+# 3. CLIPBOARD HISTORY DAEMON
+# ------------------------------------------------------------------------------
+# X11 clipboard history: prefer greenclip if available, or internal clipboard daemon
+if command -v greenclip >/dev/null 2>&1; then
+  pgrep -x greenclip >/dev/null 2>&1 || nohup greenclip daemon >/dev/null 2>&1 &
+elif command -v xclip >/dev/null 2>&1 || command -v xsel >/dev/null 2>&1; then
+  clip_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/clipboard-history"
+  [[ -x "$clip_script" ]] || clip_script="$(dirname "$0")/clipboard-history"
+  if [[ -x "$clip_script" ]]; then
+    pgrep -f "clipboard-history daemon" >/dev/null 2>&1 || nohup "$clip_script" daemon >/dev/null 2>&1 &
+  fi
+fi
+
+# ------------------------------------------------------------------------------
+# 4. NETWORK & NOTIFICATION DAEMONS
+# ------------------------------------------------------------------------------
+# Network applet in background
+if command -v nm-applet >/dev/null 2>&1; then
+  pgrep -x nm-applet >/dev/null 2>&1 || nohup nm-applet --indicator >/dev/null 2>&1 &
+fi
+
+# Lightweight notification daemon (Dunst)
+if command -v dunst >/dev/null 2>&1; then
+  pgrep -x dunst >/dev/null 2>&1 || nohup dunst >/dev/null 2>&1 &
+fi
+
+# ------------------------------------------------------------------------------
+# 5. TOUCHPAD CONFIGURATION & GESTURES
+# ------------------------------------------------------------------------------
+# Touchpad configuration: tap-to-click, natural scrolling, and acceleration
+touchpad_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/setup-touchpad"
+[[ -x "$touchpad_script" ]] || touchpad_script="$(dirname "$0")/setup-touchpad"
+if [[ -x "$touchpad_script" ]]; then
+  "$touchpad_script" >/dev/null 2>&1 || true
+fi
+
+# Multi-touch gestures: prefer libinput-gestures when in 'input' group, or native daemon
+if command -v libinput-gestures >/dev/null 2>&1 && groups | grep -qw "input"; then
+  pgrep -x libinput-gestures >/dev/null 2>&1 || libinput-gestures-setup start >/dev/null 2>&1 || nohup libinput-gestures >/dev/null 2>&1 &
+else
+  # Native fast X11 gesture daemon (libinput Xorg driver + XTest injection)
+  gesture_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/gesture-daemon"
+  [[ -x "$gesture_bin" ]] || gesture_bin="$(dirname "$0")/gesture-daemon"
+  if [[ -x "$gesture_bin" ]]; then
+    pgrep -x gesture-daemon >/dev/null 2>&1 || nohup "$gesture_bin" >/dev/null 2>&1 &
+  fi
+fi
+
+# ------------------------------------------------------------------------------
+# 6. XSETTINGS DAEMON (GTK Theme Synchronization)
+# ------------------------------------------------------------------------------
+if command -v xsettingsd >/dev/null 2>&1; then
+  pgrep -x xsettingsd >/dev/null 2>&1 || nohup xsettingsd >/dev/null 2>&1 &
+fi
+
+exit 0

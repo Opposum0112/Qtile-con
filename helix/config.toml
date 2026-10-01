@@ -1,0 +1,45 @@
+# Set the Catppuccin flavor (Options: catppuccin_mocha, catppuccin_macchiato, catppuccin_frappe, catppuccin_latte)
+theme = "catppuccin_mocha"
+
+[editor]
+# Visual helpers
+line-number = "relative"   # Makes jump targets (e.g. 10j, 5k) easy to calculate
+cursorline = true          # Highlights the line the cursor is currently on
+color-modes = true         # Changes the statusline color based on the current editor mode
+true-color = true          # Forces 24-bit RGB color support
+mouse = true               # Enables mouse support for clicking and scrolling
+
+# Scannability & layout
+bufferline = "multiple"    # Shows open files/buffers as tabs at the top of the window
+gutters = ["diagnostics", "line-numbers", "diff"] # Clean visual gutters for errors and git status
+soft-wrap.enable = true    # Wraps long lines cleanly instead of scrolling horizontally
+
+# Search and Pickers
+file-picker.hidden = false # Includes hidden files (like .gitignore or .env) in search results
+
+[editor.cursor-shape]
+normal = "block"           # Solid block for structural editing in Normal mode
+insert = "bar"             # Thin vertical bar for writing text in Insert mode
+select = "underline"       # Underline style for Select mode text manipulation
+
+[editor.indent-guides]
+render = true              # Enables visual indentation lines
+character = "▏"            # Uses a subtle, thin vertical line for clean alignment
+skip-levels = 1            # Skips drawing a guide on the very first indent level
+
+[editor.statusline]
+# Fully optimized layout for tracking position, LSP, and version control
+left = ["mode", "spinner", "file-name", "file-modification-indicator"]
+right = ["diagnostics", "selections", "position", "file-encoding", "version-control"]
+
+[editor.lsp]
+display-messages = true    # Shows language server progress/messages in the statusline
+display-inlay-hints = true # Displays type hints inline if supported by your LSP
+
+# Useful Quality-of-Life Key Mappings
+[keys.normal]
+# Quick buffer switching/closing using the standard backspace key
+backspace = ":buffer-close" # Or ":bc"
+
+# Muscle-memory saves
+"C-s" = ":w"

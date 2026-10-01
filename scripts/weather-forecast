@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Detailed multi-column weather forecast card grid viewer for Qtile-Con."""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.parse
+from pathlib import Path
+
+
+def get_theme_path():
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    theme = os.environ.get("QTILE_ROFI_WEATHER_THEME", str(config_dir / "themes/catppuccin-mocha-weather.rasi"))
+    if not os.path.isfile(theme):
+        repo_theme = Path(__file__).resolve().parent.parent / "themes/catppuccin-mocha-weather.rasi"
+        if repo_theme.is_file():
+            theme = str(repo_theme)
+        else:
+            theme = str(config_dir / "themes/catppuccin-mocha.rasi")
+    return theme
+
+
+def get_weather_location():
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    loc_file = config_dir / "weather-location"
+    if loc_file.is_file():
+        try:
+            loc = loc_file.read_text().strip()
+            if loc and loc.lower() != "auto":
+                return loc
+        except Exception:
+            pass
+    return ""
+
+
+def get_weather_icon(desc):
+    d = desc.lower()
+    if "sun" in d or "clear" in d:
+        return "󰖙"
+    elif "partly" in d:
+        return "󰖕"
+    elif "cloud" in d or "overcast" in d:
+        return "󰖐"
+    elif "thunder" in d or "storm" in d:
+        return "󰖓"
+    elif "rain" in d or "drizzle" in d or "shower" in d:
+        return "󰖗"
+    elif "snow" in d or "ice" in d or "sleet" in d:
+        return "󰖘"
+    elif "fog" in d or "mist" in d or "haze" in d:
+        return "󰖑"
+    return "󰖐"
+
+
+def fetch_hourly_weather(loc=""):
+    url_loc = urllib.parse.quote(loc) if loc else ""
+    url = f"https://wttr.in/{url_loc}?format=j1"
+    try:
+        cmd = ["curl", "-s", "--max-time", "6", url]
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+        return json.loads(out)
+    except Exception:
+        return None
+
+
+def show_forecast_menu():
+    loc = get_weather_location()
+    data = fetch_hourly_weather(loc)
+
+    cards = []
+    loc_display = loc if loc else "Current Location"
+    current_summary = ""
+
+    if data:
+        try:
+            curr = data.get("current_condition", [{}])[0]
+            temp = curr.get("temp_C", "?")
+            feels = curr.get("FeelsLikeC", "?")
+            desc = curr.get("weatherDesc", [{}])[0].get("value", "Clear")
+            hum = curr.get("humidity", "")
+            wind = curr.get("windspeedKmph", "")
+            icon = get_weather_icon(desc)
+
+            # Location name if provided by API
+            area = data.get("nearest_area", [{}])[0]
+            area_name = area.get("areaName", [{}])[0].get("value", loc_display)
+            country = area.get("country", [{}])[0].get("value", "")
+            loc_display = f"{area_name}, {country}".strip(", ")
+            current_summary = f"{icon} {loc_display} · Now: {temp}°C (feels {feels}°C) · {desc} · 💧 {hum}% · 💨 {wind}km/h"
+
+            # Hourly blocks for today (8 slots: 00:00 to 21:00 in 3h steps)
+            hourly_list = data.get("weather", [{}])[0].get("hourly", [])
+            for h in hourly_list:
+                t_int = int(h.get("time", "0")) // 100
+                t_str = f"{t_int:02d}:00"
+                h_temp = h.get("tempC", "?")
+                h_feels = h.get("FeelsLikeC", "?")
+                h_desc = h.get("weatherDesc", [{}])[0].get("value", "")
+                h_hum = h.get("humidity", "")
+                h_wind = h.get("windspeedKmph", "")
+                h_rain = h.get("chanceofrain", "0")
+                h_icon = get_weather_icon(h_desc)
+
+                card = (
+                    f"{h_icon}  {t_str}    {h_temp:>2}°C (feels {h_feels:>2}°C)    {h_desc}\n"
+                    f"   🌧 Rain: {h_rain}%   ·   💧 Humidity: {h_hum}%   ·   💨 Wind: {h_wind}km/h"
+                )
+                cards.append(card)
+        except Exception:
+            cards.append(f"󰖐  Error\n   Could not parse weather for {loc_display}. Check network.")
+    else:
+        cards.append("󰖐  Network Error\n   Unable to reach wttr.in. Please check internet connection.")
+
+    # Action cards formatted cleanly with 2 lines each
+    cards.append("󰖐  3-Day Forecast\n   Open terminal visual multi-day weather overview")
+    cards.append("󰒓  Change City\n   Configure custom weather city or auto-detection")
+    cards.append("󰅖  Close Weather\n   Dismiss forecast dashboard and return to desktop")
+
+    theme = get_theme_path()
+    prompt = f"Weather ({loc_display}) > "
+
+    # Use Rofi with NUL byte delimiter to allow multi-line cards
+    rofi_cmd = [
+        "rofi", "-dmenu", "-i",
+        "-sep", "\x1f",
+        "-p", prompt,
+    ]
+    if current_summary:
+        rofi_cmd.extend(["-mesg", current_summary])
+    if os.path.isfile(theme):
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    payload = "\x1f".join(cards)
+    choice, _ = proc.communicate(input=payload)
+    choice = (choice or "").strip()
+
+    if not choice or "Close Weather" in choice:
+        return
+
+    scripts_dir = Path(__file__).resolve().parent
+    if "3-Day Forecast" in choice or any(f"{i:02d}:00" in choice for i in range(24)):
+        term = os.environ.get("QTILE_TERMINAL", "alacritty")
+        url_loc = urllib.parse.quote(loc) if loc else ""
+        fetch_cmd = f"curl -s 'https://wttr.in/{url_loc}?1'; echo ''; read -n 1 -s -r -p 'Press any key to close...'"
+        subprocess.Popen([term, "-e", "bash", "-c", fetch_cmd], start_new_session=True)
+    elif "Change City" in choice:
+        loc_script = str(scripts_dir / "set-weather-location")
+        subprocess.Popen([loc_script], start_new_session=True)
+
+
+if __name__ == "__main__":
+    show_forecast_menu()

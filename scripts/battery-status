@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Battery status provider and power diagnostics for Qtile-Con."""
+import glob
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+# Ensure UTF-8 locale environment
+os.environ["LANG"] = os.environ.get("LANG", "en_US.UTF-8")
+os.environ["LC_ALL"] = os.environ.get("LC_ALL", "en_US.UTF-8")
+
+
+def read_sysfs(path, default=""):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return default
+
+
+def get_battery_info():
+    """Extract detailed battery diagnostics from sysfs."""
+    bats = sorted(glob.glob("/sys/class/power_supply/BAT*"))
+    if not bats:
+        # Check AC adapter for desktop or VM
+        acs = glob.glob("/sys/class/power_supply/A*")
+        ac_online = False
+        for ac in acs:
+            online_str = read_sysfs(os.path.join(ac, "online"), "0")
+            if online_str == "1":
+                ac_online = True
+                break
+        return {
+            "present": False,
+            "text": "󰚥 AC" if ac_online else "󰂎 N/A",
+            "tooltip": "Power: AC Connected (No battery detected)",
+            "percent": 100 if ac_online else 0,
+            "status": "AC" if ac_online else "Unknown",
+            "charging": ac_online,
+            "critical": False,
+        }
+
+    bat = bats[0]
+    dev_name = os.path.basename(bat)
+
+    cap_str = read_sysfs(os.path.join(bat, "capacity"), "100")
+    try:
+        cap = int(cap_str)
+    except ValueError:
+        cap = 100
+
+    status = read_sysfs(os.path.join(bat, "status"), "Unknown")
+    is_charging = status.lower() in ("charging", "full")
+    is_full = status.lower() == "full" or cap >= 99
+
+    # Determine Nerd Font icon
+    if is_charging:
+        icon = "󰂅" if is_full else "󰂄"
+    else:
+        if cap >= 90:
+            icon = "󰁹"
+        elif cap >= 80:
+            icon = "󰂂"
+        elif cap >= 70:
+            icon = "󰂁"
+        elif cap >= 60:
+            icon = "󰂀"
+        elif cap >= 50:
+            icon = "󰁿"
+        elif cap >= 40:
+            icon = "󰁾"
+        elif cap >= 30:
+            icon = "󰁽"
+        elif cap >= 20:
+            icon = "󰁼"
+        elif cap >= 10:
+            icon = "󰁻"
+        else:
+            icon = "󰂃"
+
+    is_critical = cap <= 15 and not is_charging
+
+    # Additional health info
+    tech = read_sysfs(os.path.join(bat, "technology"), "Li-ion")
+    model = read_sysfs(os.path.join(bat, "model_name"), "Battery")
+    cycles = read_sysfs(os.path.join(bat, "cycle_count"), "")
+    temp_str = read_sysfs(os.path.join(bat, "temp"), "")
+
+    tooltip_parts = [
+        f"󰁹 Device: {dev_name} ({model})",
+        f"Status: {status} ({cap}%)",
+        f"Technology: {tech}",
+    ]
+    if cycles:
+        tooltip_parts.append(f"Cycle Count: {cycles}")
+    if temp_str:
+        try:
+            temp_c = int(temp_str) / 10.0
+            tooltip_parts.append(f"Temperature: {temp_c:.1f}°C")
+        except ValueError:
+            pass
+
+    tooltip_parts.extend(["", "Click: show battery notification / details"])
+
+    return {
+        "present": True,
+        "text": f"{icon} {cap}%",
+        "tooltip": "\n".join(tooltip_parts),
+        "percent": cap,
+        "status": status,
+        "charging": is_charging,
+        "critical": is_critical,
+    }
+
+
+def show_notification():
+    """Send user-facing battery status notification."""
+    data = get_battery_info()
+    title = f"Battery: {data['percent']}% ({data['status']})"
+    body = data["tooltip"].replace("\nClick: show battery notification / details", "")
+    if shutil.which("notify-send"):
+        urgency = "critical" if data.get("critical") else "normal"
+        subprocess.run(["notify-send", "-a", "Battery", "-u", urgency, title, body])
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("--info", "-i", "info"):
+        show_notification()
+    else:
+        data = get_battery_info()
+        print(json.dumps(data))
+
+
+if __name__ == "__main__":
+    main()

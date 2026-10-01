@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG="${QTILE_CONFIG:-$HOME/.config/qtile/config.py}"
+QTILE_BIN="${QTILE_BIN:-$(command -v qtile || true)}"
+
+if [[ -z "$QTILE_BIN" ]]; then
+  if [[ -x "$HOME/.local/bin/qtile" ]]; then
+    QTILE_BIN="$HOME/.local/bin/qtile"
+  elif [[ -x "$HOME/.local/share/pipx/venvs/qtile/bin/qtile" ]]; then
+    QTILE_BIN="$HOME/.local/share/pipx/venvs/qtile/bin/qtile"
+  else
+    echo "ERROR: qtile was not found on PATH." >&2
+    echo "If installed with pipx, try: export PATH=\"$HOME/.local/bin:\$PATH\"" >&2
+    exit 127
+  fi
+fi
+
+if [[ ! -f "$CONFIG" ]]; then
+  echo "ERROR: Qtile config not found: $CONFIG" >&2
+  exit 2
+fi
+
+echo "Qtile executable: $QTILE_BIN"
+echo "Config file:      $CONFIG"
+exec "$QTILE_BIN" check -c "$CONFIG"

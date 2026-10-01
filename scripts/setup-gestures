@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "==> Qtile-Con Touchpad Gestures Setup & Diagnostics <=="
+
+export DISPLAY="${DISPLAY:-:0}"
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
+mkdir -p "$CONF_DIR"
+
+# 1. Always ensure libinput-gestures.conf is synced to ~/.config/
+cp -f "$(dirname "$0")/../gestures/libinput-gestures.conf" "$CONF_DIR/libinput-gestures.conf" 2>/dev/null || true
+echo "[OK] Installed $CONF_DIR/libinput-gestures.conf"
+
+# Ensure tap-to-click, double-tap, and natural scrolling are enabled
+touchpad_setup="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/setup-touchpad"
+[[ -x "$touchpad_setup" ]] || touchpad_setup="$(dirname "$0")/setup-touchpad"
+if [[ -x "$touchpad_setup" ]]; then
+  "$touchpad_setup" --verbose || true
+fi
+
+# 2. Check for optional --install-libinput flag
+if [[ "${1:-}" == "--install-libinput" ]]; then
+  echo "==> Installing libinput-gestures from source..."
+  TMP_DIR="$(mktemp -d)"
+  git clone --depth 1 https://github.com/bulletmark/libinput-gestures.git "$TMP_DIR/libinput-gestures"
+  echo "Installing to ~/.local/bin..."
+  mkdir -p "$HOME/.local/bin"
+  cp -f "$TMP_DIR/libinput-gestures/libinput-gestures" "$HOME/.local/bin/"
+  cp -f "$TMP_DIR/libinput-gestures/libinput-gestures-setup" "$HOME/.local/bin/"
+  chmod +x "$HOME/.local/bin/libinput-gestures"*
+  rm -rf "$TMP_DIR"
+  echo "[OK] libinput-gestures binaries installed to ~/.local/bin."
+  echo "Note: libinput-tools and 'input' group membership are required:"
+  echo "  sudo apt-get install -y libinput-tools"
+  echo "  sudo gpasswd -a $USER input"
+  echo "  (Then log out and back in)"
+  exit 0
+fi
+
+# 3. Check if libinput-gestures is available and usable
+gesture_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/gesture-daemon"
+[[ -x "$gesture_bin" ]] || gesture_bin="$(dirname "$0")/gesture-daemon"
+
+has_libinput_gestures=false
+if command -v libinput-gestures >/dev/null 2>&1; then
+  has_libinput_gestures=true
+fi
+
+in_input_group=false
+if groups | grep -qw "input"; then
+  in_input_group=true
+fi
+
+if [[ "$has_libinput_gestures" == true ]] && [[ "$in_input_group" == true ]]; then
+  echo "[OK] libinput-gestures is installed and user is in 'input' group."
+  # Stop native daemon if running to avoid duplicate triggers
+  if [[ -x "$gesture_bin" ]]; then
+    "$gesture_bin" --kill >/dev/null 2>&1 || true
+  fi
+  libinput-gestures-setup restart 2>/dev/null || libinput-gestures-setup start 2>/dev/null || true
+  echo "[OK] libinput-gestures is active and running by default."
+else
+  if [[ "$has_libinput_gestures" == true ]] && [[ "$in_input_group" == false ]]; then
+    echo "[INFO] libinput-gestures is installed, but user '$USER' is not in the 'input' group."
+    echo "       To enable raw libinput access: sudo gpasswd -a $USER input"
+  elif [[ "$has_libinput_gestures" == false ]]; then
+    echo "[INFO] libinput-gestures is not currently installed."
+    echo "       To install it automatically: ./scripts/setup-gestures --install-libinput"
+  fi
+
+  echo "[INFO] Using native ultra-fast X11 gesture daemon (driven by Xorg libinput driver)."
+  if [[ -x "$gesture_bin" ]]; then
+    if "$gesture_bin" --status >/dev/null 2>&1; then
+      echo "[OK] Native X11 gesture-daemon is already running."
+    else
+      "$gesture_bin"
+      sleep 0.2
+      if "$gesture_bin" --status >/dev/null 2>&1; then
+        echo "[OK] Native X11 gesture-daemon started successfully."
+      else
+        echo "[WARNING] Could not start gesture-daemon in current environment."
+      fi
+    fi
+  fi
+fi
+
+echo ""
+echo "Touchpad Gestures:"
+echo "  • 3-finger swipe Left / Right: Switch workspace (Next / Prev via natural scroll)"
+echo "  • 3-finger swipe Up / Down: Cycle layouts (Next / Prev)"
+echo "  • 4-finger swipe Left / Right: Move active window across workspaces"
+echo "  • 4-finger swipe Up: Open Application Launcher"
+echo "  • 4-finger swipe Down: Open Terminal (Alacritty)"
+echo "  • 3/4-finger pinch Out: Toggle Fullscreen"
+echo "  • 3/4-finger pinch In: Toggle Floating"
+

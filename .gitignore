@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+*.log
+.env
+.mypy_cache/
+scripts/gesture-daemon

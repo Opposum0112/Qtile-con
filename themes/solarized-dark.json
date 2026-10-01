@@ -1,0 +1,28 @@
+{
+  "name": "Solarized Dark",
+  "colors": {
+    "rosewater": "#eee8d5",
+    "flamingo": "#cb4b16",
+    "pink": "#d33682",
+    "mauve": "#6c71c4",
+    "red": "#dc322f",
+    "maroon": "#cb4b16",
+    "peach": "#cb4b16",
+    "yellow": "#b58900",
+    "green": "#859900",
+    "teal": "#2aa198",
+    "sky": "#2aa198",
+    "sapphire": "#268bd2",
+    "blue": "#268bd2",
+    "lavender": "#6c71c4",
+    "text": "#93a1a1",
+    "subtext": "#839496",
+    "overlay": "#657b83",
+    "surface2": "#586e75",
+    "surface1": "#094453",
+    "surface0": "#073642",
+    "base": "#002b36",
+    "mantle": "#073642",
+    "crust": "#001e26"
+  }
+}

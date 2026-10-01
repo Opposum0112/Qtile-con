@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Script: multipass.gui
+# Purpose: Wrapper for Multipass GUI resolving X11 Mesa/Flutter thread-safety
+#          and GLArea pixel format initialization errors in snap environments.
+# ==============================================================================
+set -euo pipefail
+
+SNAP_USER_DATA="${SNAP_USER_DATA:-$HOME/snap/multipass/current}"
+SNAP_USER_COMMON="${SNAP_USER_COMMON:-$HOME/snap/multipass/common}"
+LIB_DIR="$SNAP_USER_COMMON/lib"
+LIB_SO="$LIB_DIR/libxinitthreads.so"
+
+mkdir -p "$LIB_DIR"
+
+# 1. Ensure libxinitthreads.so helper library exists in snap common storage
+if [[ ! -f "$LIB_SO" ]]; then
+  if [[ -f "$HOME/.local/lib/libxinitthreads.so" ]]; then
+    cp -f "$HOME/.local/lib/libxinitthreads.so" "$LIB_SO"
+  elif [[ -f "$(dirname "$0")/../lib/libxinitthreads.so" ]]; then
+    cp -f "$(dirname "$0")/../lib/libxinitthreads.so" "$LIB_SO"
+  elif command -v gcc >/dev/null 2>&1; then
+    TMP_C="$(mktemp --suffix=.c)"
+    cat << 'EOF' > "$TMP_C"
+#include <X11/Xlib.h>
+__attribute__((constructor))
+static void init_xlib_threads(void) {
+    XInitThreads();
+}
+EOF
+    gcc -O2 -shared -fPIC "$TMP_C" -o "$LIB_SO" -lX11 2>/dev/null || true
+    rm -f "$TMP_C"
+  fi
+  chmod 755 "$LIB_SO" 2>/dev/null || true
+fi
+
+# 2. Inject LD_PRELOAD into snap revision environment so desktop-launch loads it
+if [[ -d "$SNAP_USER_DATA" && -f "$LIB_SO" ]]; then
+  rev_file="$SNAP_USER_DATA/.last_revision"
+  if [[ ! -f "$rev_file" ]]; then
+    echo 'export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$SNAP_USER_COMMON/lib/libxinitthreads.so"' > "$rev_file"
+  elif ! grep -q "libxinitthreads.so" "$rev_file" 2>/dev/null; then
+    echo 'export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$SNAP_USER_COMMON/lib/libxinitthreads.so"' >> "$rev_file"
+  fi
+fi
+
+# 3. Launch multipass GUI through standard snap binary
+exec /snap/bin/multipass.gui "$@"

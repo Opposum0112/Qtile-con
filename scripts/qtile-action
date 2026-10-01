@@ -1,0 +1,387 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+THEME="${QTILE_ROFI_THEME:-$CONFIG_DIR/themes/catppuccin-mocha.rasi}"
+if [[ ! -f "$THEME" && -f "$(dirname "$0")/../themes/catppuccin-mocha.rasi" ]]; then
+  THEME="$(dirname "$0")/../themes/catppuccin-mocha.rasi"
+fi
+
+# Ensure UTF-8 locale environment so tools like btop/htop never abort
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+if [[ "$LANG" != *.[Uu][Tt][Ff]* ]]; then
+  export LANG="en_US.UTF-8"
+  export LC_ALL="en_US.UTF-8"
+fi
+
+# Enrich PATH with Cargo, Homebrew, Pipx, Go, Flatpak, Snap, sbin, and local scripts
+export PATH="$HOME/.cargo/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$HOME/.linuxbrew/bin:$HOME/.linuxbrew/sbin:$HOME/.local/bin:$HOME/.local/share/pipx/venvs/qtile/bin:$HOME/go/bin:/usr/local/go/bin:/snap/bin:/var/lib/flatpak/exports/bin:$HOME/.local/share/flatpak/exports/bin:$HOME/.config/qtile/scripts:$HOME/scripts:/usr/local/sbin:/usr/sbin:/sbin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+
+toggle_rofi() {
+  local action_name="${1:-launcher}"
+  if pgrep -x rofi >/dev/null 2>&1; then
+    # Debounce: check if rofi was launched less than 400ms ago to prevent instant closing on double-tap or key bounce
+    local ts_file="/dev/shm/qtile_rofi_launch_${USER:-user}"
+    local now_ms last_ms diff_ms
+    now_ms="$(date +%s%3N 2>/dev/null || echo 0)"
+    last_ms=0
+    [[ -f "$ts_file" ]] && last_ms="$(cat "$ts_file" 2>/dev/null || echo 0)"
+    diff_ms=$(( now_ms - last_ms ))
+    if [[ $diff_ms -lt 400 && $last_ms -ne 0 ]]; then
+      # Rapid bounce from key repeat or touchpad tap bounce; ignore to prevent accidental close!
+      exit 0
+    fi
+    pkill -x rofi 2>/dev/null || true
+    exit 0
+  fi
+  date +%s%3N > "/dev/shm/qtile_rofi_launch_${USER:-user}" 2>/dev/null || true
+}
+
+action="${1:-launcher}"
+case "$action" in
+  launcher)
+    # Toggle: close launcher if already active (debounced against rapid tap bounce)
+    toggle_rofi "launcher"
+    term="${QTILE_TERMINAL:-alacritty}"
+    run_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/qtile-run"
+    [[ -x "$run_bin" ]] || run_bin="$(dirname "$0")/qtile-run"
+    files_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/rofi-file-search"
+    [[ -x "$files_bin" ]] || files_bin="$(dirname "$0")/rofi-file-search"
+    content_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/rofi-content-search"
+    [[ -x "$content_bin" ]] || content_bin="$(dirname "$0")/rofi-content-search"
+    exec rofi -show combi -modes "combi,drun,run,file:$files_bin,content:$content_bin" -combi-modes "drun,run" -combi-hide-mode-prefix -run-command "$run_bin {cmd}" -run-shell-command "$run_bin {cmd}" -show-icons -icon-theme Adwaita -terminal "$term" -theme "$THEME" "${@:2}"
+    ;;
+  file|files|file-search)
+    toggle_rofi "file"
+    files_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/rofi-file-search"
+    [[ -x "$files_bin" ]] || files_bin="$(dirname "$0")/rofi-file-search"
+    exec rofi -show file -modes "file:$files_bin" -theme "$THEME" "${@:2}"
+    ;;
+  content|content-search)
+    toggle_rofi "content"
+    content_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/rofi-content-search"
+    [[ -x "$content_bin" ]] || content_bin="$(dirname "$0")/rofi-content-search"
+    exec rofi -show content -modes "content:$content_bin" -theme "$THEME" "${@:2}"
+    ;;
+  run)
+    toggle_rofi "run"
+    term="${QTILE_TERMINAL:-alacritty}"
+    run_bin="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/qtile-run"
+    [[ -x "$run_bin" ]] || run_bin="$(dirname "$0")/qtile-run"
+    exec rofi -show run -run-command "$run_bin {cmd}" -run-shell-command "$run_bin {cmd}" -show-icons -icon-theme Adwaita -theme "$THEME" -terminal "$term" "${@:2}"
+    ;;
+  clipboard)
+    clip_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/clipboard-history"
+    [[ -x "$clip_script" ]] || clip_script="$(dirname "$0")/clipboard-history"
+    if [[ -x "$clip_script" ]]; then
+      exec "$clip_script" show
+    elif command -v greenclip >/dev/null 2>&1; then
+      exec rofi -modi "clipboard:greenclip print" -show clipboard -theme "$THEME"
+    else
+      notify-send "Clipboard history" "Install xclip or greenclip for clipboard history."
+    fi
+    ;;
+  layout)
+    # Determine the currently active workspace and layout
+    group_info="$(qtile cmd-obj -o group -f info 2>/dev/null || true)"
+    curr_group="$(grep -o '"name": "[^"]*"' <<< "$group_info" | head -n 1 | cut -d'"' -f4)"
+    curr_layout="$(grep -o '"layout": "[^"]*"' <<< "$group_info" | head -n 1 | cut -d'"' -f4)"
+    [[ -z "$curr_group" ]] && curr_group="active"
+
+    # If an argument is provided, set it directly (e.g. qtile-action layout columns)
+    if [[ -n "${2:-}" ]]; then
+      target_layout="$(tr '[:upper:]' '[:lower:]' <<< "${2}")"
+      target_group="${3:-$curr_group}"
+      if [[ "$target_group" != "active" ]]; then
+        qtile cmd-obj -o group "$target_group" -f setlayout -a "$target_layout" 2>/dev/null || \
+          qtile cmd-obj -o group -f setlayout -a "$target_layout" 2>/dev/null || true
+      else
+        qtile cmd-obj -o group -f setlayout -a "$target_layout" 2>/dev/null || true
+      fi
+      notify-send -i preferences-desktop-theme "Workspace $target_group" "Layout set to: $target_layout" 2>/dev/null || true
+      exit 0
+    fi
+
+    # Build options list with current layout marked
+    options=(
+      "󰨘  Scroller"
+      "󰕰  Columns"
+      "󰆍  MonadTall"
+      "󰖲  MonadWide"
+      "󰍹  Max"
+      "󰕰  Tile"
+      "󰓡  Matrix"
+      "󰉋  Floating"
+      "󰅖  Cancel"
+    )
+
+    formatted_options=()
+    for opt in "${options[@]}"; do
+      opt_clean="$(awk '{print tolower($NF)}' <<< "$opt")"
+      if [[ "$opt_clean" == "$curr_layout" ]]; then
+        formatted_options+=("$opt  (active)")
+      else
+        formatted_options+=("$opt")
+      fi
+    done
+
+    if [[ "$curr_group" != "active" && -n "$curr_group" ]]; then
+      prompt_label="Workspace $curr_group Layout"
+    else
+      prompt_label="Workspace Layout"
+    fi
+    choice="$(printf '%s\n' "${formatted_options[@]}" | rofi -dmenu -i -p "$prompt_label > " -theme "$THEME" || true)"
+    [[ -n "$choice" && "$choice" != *"Cancel"* ]] || exit 0
+
+    cleaned_choice="${choice%  (active)}"
+    layout_name="$(awk '{print tolower($NF)}' <<< "$cleaned_choice")"
+
+    if [[ "$curr_group" != "active" ]]; then
+      qtile cmd-obj -o group "$curr_group" -f setlayout -a "$layout_name" 2>/dev/null || \
+        qtile cmd-obj -o group -f setlayout -a "$layout_name" 2>/dev/null || \
+        notify-send "Qtile" "Could not set layout: $layout_name"
+    else
+      qtile cmd-obj -o group -f setlayout -a "$layout_name" 2>/dev/null || notify-send "Qtile" "Could not set layout: $layout_name"
+    fi
+    notify-send -i preferences-desktop-theme "Workspace $curr_group" "Layout switched to: $layout_name" 2>/dev/null || true
+    ;;
+  volume)
+    vol_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/volume-menu"
+    [[ -x "$vol_script" ]] || vol_script="$(dirname "$0")/volume-menu"
+    if [[ -x "$vol_script" ]]; then
+      exec "$vol_script"
+    fi
+    ;;
+  wifi)
+    wifi_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/wifi-menu"
+    [[ -x "$wifi_script" ]] || wifi_script="$(dirname "$0")/wifi-menu"
+    if [[ -x "$wifi_script" ]]; then
+      exec "$wifi_script"
+    fi
+    ;;
+  monitor)
+    target="${2:-general}"
+    term="${QTILE_TERMINAL:-alacritty}"
+    term_bin="$(command -v "$term" 2>/dev/null || command -v alacritty || echo "/usr/bin/alacritty")"
+    case "$target" in
+      memory)
+        # Dedicated memory inspection sorted by %MEM
+        if command -v htop >/dev/null 2>&1; then
+          exec "$term_bin" -e htop -s PERCENT_MEM
+        elif command -v btop >/dev/null 2>&1; then
+          exec "$term_bin" -e btop --utf-force
+        else
+          exec "$term_bin" -e top -o %MEM
+        fi
+        ;;
+      investigate)
+        inv_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/sys-investigate"
+        [[ -x "$inv_script" ]] || inv_script="$(dirname "$0")/sys-investigate"
+        if [[ -x "$inv_script" ]]; then
+          exec "$term_bin" -e "$inv_script"
+        elif command -v htop >/dev/null 2>&1; then
+          exec "$term_bin" -e htop
+        fi
+        ;;
+      cpu|*)
+        if command -v btop >/dev/null 2>&1; then
+          exec "$term_bin" -e btop --utf-force
+        elif command -v htop >/dev/null 2>&1; then
+          exec "$term_bin" -e htop
+        else
+          exec "$term_bin" -e top
+        fi
+        ;;
+    esac
+    ;;
+  slider)
+    slider_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/volume-slider"
+    [[ -x "$slider_script" ]] || slider_script="$(dirname "$0")/volume-slider"
+    if [[ -x "$slider_script" ]]; then
+      exec "$slider_script"
+    fi
+    ;;
+  weather)
+    weather_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/weather-forecast"
+    [[ -x "$weather_script" ]] || weather_script="$(dirname "$0")/weather-forecast"
+    if [[ -x "$weather_script" ]]; then
+      exec "$weather_script"
+    fi
+    ;;
+  man)
+    man_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/man-lookup"
+    [[ -x "$man_script" ]] || man_script="$(dirname "$0")/man-lookup"
+    if [[ -x "$man_script" ]]; then
+      exec "$man_script"
+    fi
+    ;;
+  witr)
+    term="${QTILE_TERMINAL:-alacritty}"
+    term_bin="$(command -v "$term" 2>/dev/null || command -v alacritty || echo "/usr/bin/alacritty")"
+    witr_bin="$(command -v witr 2>/dev/null || echo "$HOME/.local/bin/witr")"
+    pid="${2:-}"
+    if [[ -x "$witr_bin" ]]; then
+      if [[ -n "$pid" ]]; then
+        exec "$term_bin" -e bash -c "$witr_bin --pid $pid; echo ''; read -p 'Press Enter to close...'"
+      else
+        exec "$term_bin" -e "$witr_bin" -i
+      fi
+    elif command -v "$term_bin" >/dev/null 2>&1; then
+      exec "$term_bin" -e bash -c "echo 'witr (Why Is This Running?) not found in PATH.'; echo 'Install via: curl -fsSL https://raw.githubusercontent.com/pranshuparmar/witr/main/install.sh | bash'; read -p 'Press Enter to close...'"
+    fi
+    ;;
+  investigate)
+    term="${QTILE_TERMINAL:-alacritty}"
+    term_bin="$(command -v "$term" 2>/dev/null || command -v alacritty || echo "/usr/bin/alacritty")"
+    inv_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/sys-investigate"
+    [[ -x "$inv_script" ]] || inv_script="$(dirname "$0")/sys-investigate"
+    pid="${2:-}"
+    if [[ -n "$pid" ]]; then
+      exec "$term_bin" -e "$inv_script" "$pid"
+    else
+      exec "$term_bin" -e "$inv_script"
+    fi
+    ;;
+  restore)
+    target="${2:-menu}"
+    python3 - "$THEME" "$target" << 'EOF'
+import sys, subprocess
+from libqtile.command.client import InteractiveCommandClient
+
+theme = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else ""
+target = sys.argv[2] if len(sys.argv) > 2 else "menu"
+
+try:
+    c = InteractiveCommandClient()
+    windows = c.windows()
+except Exception as e:
+    subprocess.run(["notify-send", "Qtile Restore", f"Could not connect to Qtile: {e}"])
+    sys.exit(1)
+
+minimized = [w for w in windows if w.get("minimized", False)]
+if not minimized:
+    subprocess.run(["notify-send", "Qtile Restore", "No minimized windows found."])
+    sys.exit(0)
+
+if target == "all":
+    for w in minimized:
+        try:
+            c.window[w["id"]].toggle_minimize()
+        except Exception:
+            pass
+    subprocess.run(["notify-send", "Qtile Restore", f"Restored {len(minimized)} window(s)."])
+    sys.exit(0)
+
+lines = ["󰖯  Restore All Minimized Windows"]
+win_map = {}
+for w in minimized:
+    wid = w["id"]
+    grp = w.get("group", "?")
+    name = w.get("name") or "Untitled Window"
+    wm_cls = w.get("wm_class", [""])[0] if w.get("wm_class") else ""
+    desc = f"󰖯  [{grp}] {name}"
+    if wm_cls:
+        desc += f"  ({wm_cls})"
+    desc += f"  #id:{wid}"
+    lines.append(desc)
+    win_map[desc] = (wid, grp)
+
+rofi_cmd = ["rofi", "-dmenu", "-i", "-p", "Restore Window > "]
+if theme:
+    rofi_cmd.extend(["-theme", theme])
+
+proc = subprocess.run(rofi_cmd, input="\n".join(lines), capture_output=True, text=True)
+if proc.returncode != 0 or not proc.stdout.strip():
+    sys.exit(0)
+
+selected = proc.stdout.strip()
+if "Restore All Minimized Windows" in selected:
+    for w in minimized:
+        try:
+            c.window[w["id"]].toggle_minimize()
+        except Exception:
+            pass
+    subprocess.run(["notify-send", "Qtile Restore", f"Restored {len(minimized)} window(s)."])
+elif selected in win_map:
+    wid, grp = win_map[selected]
+    try:
+        c.window[wid].toggle_minimize()
+        if grp and grp != "?":
+            c.group[grp].toscreen()
+        c.window[wid].focus()
+    except Exception as e:
+        subprocess.run(["notify-send", "Qtile Restore", f"Failed to restore: {e}"])
+EOF
+    ;;
+  cheatsheet|keys|help)
+    cs_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/keybindings-cheatsheet"
+    [[ -x "$cs_script" ]] || cs_script="$(dirname "$0")/keybindings-cheatsheet"
+    if [[ -x "$cs_script" ]]; then
+      exec "$cs_script" "${@:2}"
+    fi
+    ;;
+  configs|config|locations)
+    cs_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/keybindings-cheatsheet"
+    [[ -x "$cs_script" ]] || cs_script="$(dirname "$0")/keybindings-cheatsheet"
+    if [[ -x "$cs_script" ]]; then
+      exec "$cs_script" configs "${@:2}"
+    fi
+    ;;
+  autostart)
+    sub="${2:-edit}"
+    autostart_script="${CONFIG_DIR}/scripts/autostart"
+    [[ -f "$autostart_script" ]] || autostart_script="$(dirname "$0")/autostart"
+    if [[ "$sub" == "edit" ]]; then
+      term="${QTILE_TERMINAL:-alacritty}"
+      editor="${VISUAL:-${EDITOR:-micro}}"
+      exec "$term" -e "$editor" "$autostart_script"
+    else
+      bash "$autostart_script" &
+      command -v notify-send >/dev/null 2>&1 && notify-send "Autostart Executed" "Reloaded background services from $autostart_script"
+    fi
+    ;;
+  cockpit)
+    cockpit_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/cockpit-info"
+    [[ -x "$cockpit_script" ]] || cockpit_script="$(dirname "$0")/cockpit-info"
+    if [[ -x "$cockpit_script" ]]; then
+      exec "$cockpit_script" "${2:---menu}"
+    fi
+    ;;
+  agents|ai-agents)
+    agents_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/ai-agents-info"
+    [[ -x "$agents_script" ]] || agents_script="$(dirname "$0")/ai-agents-info"
+    if [[ -x "$agents_script" ]]; then
+      exec "$agents_script" "${2:---menu}"
+    fi
+    ;;
+  snapper)
+    snapper_script="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/snapper-info"
+    [[ -x "$snapper_script" ]] || snapper_script="$(dirname "$0")/snapper-info"
+    if [[ -x "$snapper_script" ]]; then
+      exec "$snapper_script" "${2:---rollback-menu}"
+    fi
+    ;;
+  sysadmin)
+    options=(
+      "󰟀  Cockpit Web Console"
+      "󰧑  AI Agents Running & Monitor"
+      "󰁯  Snapper Btrfs Snapshots & Immediate Rollback"
+      "󰒓  System Services Management"
+      "󰍛  System Resources & Investigation"
+      "󰅖  Cancel"
+    )
+    if [[ -f "$THEME" ]]; then
+      choice="$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "SysAdmin Control Center > " -theme "$THEME" || true)"
+    else
+      choice="$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "SysAdmin Control Center > " || true)"
+    fi
+    case "$choice" in
+      *"Cockpit"*) exec "$0" cockpit ;;
+      *"AI Agents"*) exec "$0" agents ;;
+      *"Snapper"*) exec "$0" snapper ;;
+      *"System Services"*) exec "${XDG_CONFIG_HOME:-$HOME/.config}/qtile/scripts/services-info" --menu ;;
+      *"System Resources"*) exec "$0" monitor investigate ;;
+    esac
+    ;;
+  *) echo "Usage: qtile-action [launcher|run|clipboard|layout|volume|slider|wifi|weather|man|cheatsheet|configs|autostart [edit|run]|restore [all]|witr [pid]|monitor [general|memory|cpu|investigate]|investigate [pid]|cockpit|agents|snapper|sysadmin]" >&2; exit 2 ;;
+esac

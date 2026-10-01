@@ -1,0 +1,328 @@
+#!/usr/bin/env python3
+"""
+Fast content search launcher backend for Rofi.
+Integrated as a mode tab in the application launcher.
+"""
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def find_content_backend() -> tuple[str, str]:
+    """Find the best available backend for fast content searching."""
+    rg_bin = shutil.which("rg") or "/usr/bin/rg"
+    if os.path.isfile(rg_bin) and os.access(rg_bin, os.X_OK):
+        return ("rg", rg_bin)
+
+    grep_bin = shutil.which("grep") or "/bin/grep"
+    if os.path.isfile(grep_bin) and os.access(grep_bin, os.X_OK):
+        return ("grep", grep_bin)
+
+    return ("none", "")
+
+
+COMMON_TEXT_EXTS = {
+    ".py", ".sh", ".bash", ".zsh", ".c", ".h", ".cpp", ".hpp", ".rs", ".go",
+    ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".scss", ".json", ".yaml",
+    ".yml", ".toml", ".ini", ".conf", ".cfg", ".md", ".markdown", ".txt",
+    ".rasi", ".lua", ".vim", ".desktop", ".xml", ".sql", ".env", ".service",
+}
+
+
+def is_text_file(path_obj: Path) -> bool:
+    """Determine whether file is plain text or code."""
+    if path_obj.suffix.lower() in COMMON_TEXT_EXTS:
+        return True
+    try:
+        import mimetypes
+        mime, _ = mimetypes.guess_type(str(path_obj))
+        if mime and (mime.startswith("text/") or mime in ("application/json", "application/javascript", "application/x-sh")):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def open_content_match(target_info: str) -> bool:
+    """Open a selected content match at the specific file and line number."""
+    raw = target_info.strip()
+    if not raw:
+        return False
+
+    # If it was a non-selectable row or placeholder
+    if "No matches found" in raw or "Type search query" in raw:
+        return False
+
+    # Strip snippet portion if full display line was passed
+    if "│" in raw:
+        raw = raw.split("│", 1)[0].strip()
+
+    # Strip any leading icon if passed as raw text (e.g., "󰈬  ~/.config/...")
+    if " " in raw:
+        tokens = raw.split(None, 1)
+        if len(tokens) > 1 and any(c in tokens[1] for c in (":", "/", "~", ".")):
+            raw = tokens[1].strip()
+
+    # Extract target info (abs_path:line:col or abs_path:line)
+    parts = raw.rsplit(":", 2)
+    col_no = "1"
+    line_no = "1"
+
+    if len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+        file_part, line_no, col_no = parts[0], parts[1], parts[2]
+    elif len(parts) >= 2 and parts[-1].isdigit():
+        file_part, line_no = raw.rsplit(":", 1)
+    else:
+        file_part = raw
+
+    file_part = file_part.strip()
+    if not file_part:
+        return False
+
+    expanded = os.path.expanduser(file_part)
+    path_obj = Path(expanded).resolve()
+
+    if not path_obj.exists():
+        root = Path(os.environ.get("QTILE_SEARCH_ROOT", os.path.expanduser("~"))).resolve()
+        candidate = root / file_part
+        if candidate.exists():
+            path_obj = candidate.resolve()
+        else:
+            return False
+
+    term = os.environ.get("QTILE_TERMINAL", "alacritty")
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "micro"
+
+    term_bin = shutil.which(term) or shutil.which("alacritty") or "/usr/bin/alacritty"
+    editor_bin = shutil.which(editor) or shutil.which("micro") or "/usr/bin/micro"
+
+    editor_name = os.path.basename(editor_bin).lower()
+
+    if not is_text_file(path_obj) and shutil.which("xdg-open"):
+        cmd = ["xdg-open", str(path_obj)]
+    elif "code" in editor_name:
+        cmd = [editor_bin, "-g", f"{path_obj}:{line_no}:{col_no}"]
+    elif "micro" in editor_name:
+        cmd = [term_bin, "-e", editor_bin, f"+{line_no}:{col_no}", str(path_obj)]
+    elif editor_name in ("nvim", "vim", "vi", "nano"):
+        cmd = [term_bin, "-e", editor_bin, f"+{line_no}", str(path_obj)]
+    else:
+        cmd = [term_bin, "-e", editor_bin, f"+{line_no}:{col_no}", str(path_obj)]
+
+    subprocess.Popen(
+        cmd,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+    return True
+
+
+def run_search(query: str, root_dir: str):
+    """Execute search for query and output formatted rows for Rofi."""
+    home_dir = os.path.expanduser("~")
+    home_prefix = home_dir.rstrip(os.sep) + os.sep
+
+    backend_type, backend_bin = find_content_backend()
+    if not query:
+        show_initial_instructions()
+        return
+
+    search_paths = [root_dir]
+    dot_config = os.path.join(root_dir, ".config")
+    if os.path.isdir(dot_config) and dot_config not in search_paths:
+        search_paths.append(dot_config)
+
+    is_regex = False
+    search_pattern = query
+    if query.startswith("re:"):
+        is_regex = True
+        search_pattern = query[3:].strip()
+
+    if backend_type == "rg":
+        cmd = [
+            backend_bin,
+            "--line-number",
+            "--column",
+            "--no-heading",
+            "--color=never",
+            "--smart-case",
+            "--max-columns=140",
+            "--max-columns-preview",
+            "-m", "15",
+            "-g", "!.git",
+            "-g", "!.cache",
+            "-g", "!node_modules",
+            "-g", "!.venv",
+            "-g", "!.cargo",
+            "-g", "!.rustup",
+            "-g", "!.npm",
+            "-g", "!.local",
+            "-g", "!.gemini",
+            "-g", "!.mozilla",
+            "-g", "!.lima",
+            "-g", "!snap",
+            "-g", "!.var",
+            "-g", "!core*",
+            "-g", "!*.log",
+            "-g", "!*.iso",
+            "-g", "!*.bin",
+        ]
+        if not is_regex:
+            cmd.append("-F")
+        cmd.extend(["--", search_pattern] + search_paths)
+    elif backend_type == "grep":
+        cmd = [
+            backend_bin,
+            "-rnIs",
+            "--exclude-dir=.git",
+            "--exclude-dir=.cache",
+            "--exclude-dir=node_modules",
+            "--exclude-dir=.venv",
+            "-m", "10",
+        ]
+        if not is_regex:
+            cmd.append("-F")
+        cmd.extend(["--", search_pattern] + search_paths)
+    else:
+        cmd = None
+
+    matches = []
+    if cmd:
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=65536)
+            try:
+                for line in proc.stdout:
+                    line = line.rstrip("\n")
+                    if not line:
+                        continue
+                    matches.append(line)
+                    if len(matches) >= 200:
+                        break
+            finally:
+                proc.kill()
+                proc.wait()
+        except Exception:
+            pass
+
+    try:
+        sys.stdout.write("\0keep-selection\x1ftrue\n")
+        sys.stdout.write("\0no-custom\x1ffalse\n")
+        sys.stdout.write("\0prompt\x1f󰈬 Content\n")
+
+        if not matches:
+            sys.stdout.write(f"\0message\x1f󰅖 No matches found for '{query}'. Try another query.\n")
+            sys.stdout.write(f"󰅖  No matches found for '{query}'\0nonselectable\x1ftrue\x1ficon\x1fdialog-information\n")
+            return
+
+        sys.stdout.write(f"\0message\x1f󰍉 Found {len(matches)} matches for '{query}'. Select to open.\n")
+
+        for match_line in matches:
+            parts = match_line.split(":", 3)
+            if len(parts) >= 4 and parts[1].isdigit() and parts[2].isdigit():
+                abs_file, line_no, col_no, snippet = parts[0], parts[1], parts[2], parts[3]
+            elif len(parts) >= 3 and parts[1].isdigit():
+                abs_file, line_no, col_no, snippet = parts[0], parts[1], "1", parts[2]
+            else:
+                abs_file, line_no, col_no, snippet = match_line, "1", "1", ""
+
+            if abs_file.startswith(home_prefix):
+                disp_file = "~" + abs_file[len(home_dir):]
+            else:
+                disp_file = abs_file
+
+            # Thoroughly sanitize snippet to prevent breaking Rofi protocol
+            clean_snippet = snippet.replace("\0", "").replace("\x1f", " ").replace("\r", " ").replace("\n", " ").strip()
+            clean_snippet = "".join(ch if (ch == " " or ch.isprintable()) else " " for ch in clean_snippet)
+            clean_snippet = " ".join(clean_snippet.split())
+            if len(clean_snippet) > 85:
+                clean_snippet = clean_snippet[:82] + "..."
+
+            display_text = f"󰈬  {disp_file}:{line_no}  │  {clean_snippet}"
+            info_data = f"{abs_file}:{line_no}:{col_no}"
+
+            sys.stdout.write(f"{display_text}\0info\x1f{info_data}\x1ficon\x1ftext-x-generic\n")
+        sys.stdout.flush()
+    except (BrokenPipeError, IOError):
+        pass
+
+
+def show_initial_instructions(error_msg: str = ""):
+    """Show the initial welcome prompt and instructions before a search query is submitted."""
+    home_dir = os.path.expanduser("~")
+    home_prefix = home_dir.rstrip(os.sep) + os.sep
+
+    try:
+        sys.stdout.write("\0keep-selection\x1ftrue\n")
+        sys.stdout.write("\0no-custom\x1ffalse\n")
+        sys.stdout.write("\0prompt\x1f󰈬 Content\n")
+        if error_msg:
+            sys.stdout.write(f"\0message\x1f󰅖 {error_msg}\n")
+        else:
+            sys.stdout.write("\0message\x1f󰍉 Type search query and press Enter to search inside files\n")
+        sys.stdout.write("󰍉  Type search query above and press Enter\0nonselectable\x1ftrue\x1ficon\x1fedit-find\n")
+
+        # Provide quick-access project/config files so the list is not completely empty on tab switch
+        quick_candidates = [
+            os.path.join(home_dir, ".config", "qtile", "config.py"),
+            os.path.join(home_dir, ".config", "qtile", "qtile_config", "keys.py"),
+            os.path.join(home_dir, ".config", "qtile", "qtile_config", "widgets.py"),
+            os.path.join(home_dir, ".config", "qtile", "qtile_config", "layouts.py"),
+            os.path.join(home_dir, ".config", "qtile", "qtile_config", "settings.py"),
+            os.path.join(home_dir, "Qtile-con", "README.md"),
+            os.path.join(home_dir, "Qtile-con", "docs", "KEYBINDINGS.md"),
+            os.path.join(home_dir, "Qtile-con", "docs", "CONFIGURATION.md"),
+        ]
+        for c_file in quick_candidates:
+            if os.path.isfile(c_file):
+                disp = "~" + c_file[len(home_dir):] if c_file.startswith(home_prefix) else c_file
+                desc = "Configuration file" if "config" in c_file else "Documentation"
+                sys.stdout.write(f"󰈙  {disp}:1  │  {desc}\0info\x1f{c_file}:1:1\x1ficon\x1ftext-x-generic\n")
+        sys.stdout.flush()
+    except (BrokenPipeError, IOError):
+        pass
+
+
+def main():
+    retv = os.environ.get("ROFI_RETV", "0")
+    search_root = os.environ.get("QTILE_SEARCH_ROOT", os.path.expanduser("~"))
+
+    # In rofi-script:
+    # RETV=0: Initial list request
+    # RETV=1: Selected an existing row from matches
+    # RETV=2: Selected custom entry (user typed search query and pressed Enter)
+    if retv == "1":
+        info = os.environ.get("ROFI_INFO")
+        if not info and len(sys.argv) > 1:
+            info = sys.argv[1]
+        if info and open_content_match(info):
+            sys.exit(0)
+        # If selection was invalid/placeholder, stay open and show instructions
+        show_initial_instructions(error_msg="Could not open selection. Try searching again.")
+        sys.exit(0)
+
+    if retv == "2":
+        query = " ".join(sys.argv[1:]).strip()
+        if not query:
+            show_initial_instructions()
+            sys.exit(0)
+        run_search(query, search_root)
+        sys.exit(0)
+
+    # CLI direct execution check
+    if "ROFI_RETV" not in os.environ and len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        query = " ".join(sys.argv[1:]).strip()
+        run_search(query, search_root)
+        sys.exit(0)
+
+    # Initial state (RETV=0)
+    show_initial_instructions()
+
+
+if __name__ == "__main__":
+    main()

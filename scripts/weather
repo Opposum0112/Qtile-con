@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+LOCATION_FILE="$CONFIG_DIR/weather-location"
+location="${QTILE_WEATHER_LOCATION:-}"
+
+if [[ -z "$location" && -r "$LOCATION_FILE" ]]; then
+  IFS= read -r location < "$LOCATION_FILE" || true
+fi
+location="${location:-auto}"
+
+weather_json() {
+  python3 - "$@" <<'PY'
+import json
+import sys
+
+fields = (sys.argv[1:] + [""] * 6)[:6]
+location, condition, temperature, feels_like, humidity, wind = fields
+print(json.dumps({
+    "location": location.strip(),
+    "condition": condition.strip(),
+    "temperature": temperature.strip(),
+    "feels_like": feels_like.strip(),
+    "humidity": humidity.strip(),
+    "wind": wind.strip(),
+}, ensure_ascii=False))
+PY
+}
+
+if ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+  weather_json "" "" "" "" "" ""
+  exit 0
+fi
+
+if [[ "$location" == "auto" ]]; then
+  url="https://wttr.in/"
+else
+  encoded_location="$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe=","))' "$location")"
+  url="https://wttr.in/$encoded_location"
+fi
+
+if ! output="$(curl -fsS --connect-timeout 4 --max-time 12 \
+  --retry 1 --retry-delay 1 \
+  -H 'Cache-Control: no-cache' \
+  -G --data-urlencode 'format=%l|%c|%t|%f|%h|%w' \
+  "$url" 2>/dev/null)"; then
+  weather_json "" "" "" "" "" ""
+  exit 0
+fi
+
+IFS='|' read -r place condition temperature feels_like humidity wind <<< "$output"
+weather_json "$place" "$condition" "$temperature" "$feels_like" "$humidity" "$wind"

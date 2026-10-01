@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Script: setup-backlight
+# Purpose: Configure system for passwordless screen and keyboard brightness
+#          controls via brightnessctl and udev rules.
+# ==============================================================================
+set -euo pipefail
+
+TARGET_USER="${SUDO_USER:-$USER}"
+UDEV_RULE_SRC="$(dirname "$0")/../udev/90-backlight.rules"
+UDEV_RULE_DEST="/etc/udev/rules.d/90-backlight.rules"
+
+echo "=== Qtile Backlight & Hardware Control Setup ==="
+
+# Check for root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Elevating privileges to apply udev rules and user group assignments..."
+  if command -v pkexec >/dev/null 2>&1; then
+    exec pkexec "$0" "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    exec sudo "$0" "$@"
+  else
+    echo "ERROR: Root privileges required to configure /etc/udev/rules.d/." >&2
+    exit 1
+  fi
+fi
+
+# 1. Install udev rule
+if [[ -f "$UDEV_RULE_SRC" ]]; then
+  echo "Installing udev rule from $UDEV_RULE_SRC to $UDEV_RULE_DEST..."
+  cp "$UDEV_RULE_SRC" "$UDEV_RULE_DEST"
+  chmod 0644 "$UDEV_RULE_DEST"
+else
+  echo "Creating $UDEV_RULE_DEST directly..."
+  cat << 'EOF' > "$UDEV_RULE_DEST"
+# Grant video and input groups write access to backlight and keyboard LEDs
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod 0664 /sys/class/backlight/%k/brightness"
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="*::kbd_backlight", RUN+="/bin/chgrp video /sys/class/leds/%k/brightness", RUN+="/bin/chmod 0664 /sys/class/leds/%k/brightness"
+EOF
+  chmod 0644 "$UDEV_RULE_DEST"
+fi
+
+# 2. Add target user to video and input groups
+echo "Assigning user '$TARGET_USER' to 'video' and 'input' groups..."
+usermod -aG video "$TARGET_USER" || true
+usermod -aG input "$TARGET_USER" || true
+
+# 3. Reload and trigger udev rules
+echo "Reloading udev rules..."
+udevadm control --reload-rules || true
+udevadm trigger --subsystem-match=backlight || true
+udevadm trigger --subsystem-match=leds || true
+
+# 4. Immediate runtime permission fix for active sysfs devices
+for b_file in /sys/class/backlight/*/brightness; do
+  if [[ -f "$b_file" ]]; then
+    chgrp video "$b_file" || true
+    chmod 0664 "$b_file" || true
+  fi
+done
+
+for k_file in /sys/class/leds/*kbd_backlight*/brightness; do
+  if [[ -f "$k_file" ]]; then
+    chgrp video "$k_file" || chgrp input "$k_file" || true
+    chmod 0664 "$k_file" || true
+  fi
+done
+
+echo "=== Backlight setup completed successfully! ==="
+echo "Note: If group membership was updated, log out and log in for 'input' group to take full effect in your desktop session."

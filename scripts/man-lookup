@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+THEME="${QTILE_ROFI_THEME:-$CONFIG_DIR/themes/catppuccin-mocha.rasi}"
+if [[ ! -f "$THEME" && -f "$(dirname "$0")/../themes/catppuccin-mocha.rasi" ]]; then
+  THEME="$(dirname "$0")/../themes/catppuccin-mocha.rasi"
+fi
+
+if ! command -v apropos >/dev/null 2>&1 && ! command -v man >/dev/null 2>&1; then
+  notify-send "Man Pages" "The 'man' or 'apropos' documentation tools are not installed."
+  exit 1
+fi
+
+raw_pages="$(apropos -s 1,8 "" 2>/dev/null || man -k . 2>/dev/null || true)"
+if [[ -z "$raw_pages" ]]; then
+  notify-send "Man Pages" "No manual pages index available. Run 'sudo mandb' to generate index."
+  exit 0
+fi
+
+# Format entries with man page icon
+menu_lines=()
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  menu_lines+=("󰈙  $line")
+done <<< "$raw_pages"
+
+menu_lines+=("󰅖  Cancel")
+
+choice="$(printf '%s\n' "${menu_lines[@]}" | rofi -dmenu -i -p "Man Pages > " -theme "$THEME" || true)"
+[[ -n "$choice" && "$choice" != *"Cancel"* ]] || exit 0
+
+# Extract command name (first token after icon)
+clean="$(sed -E 's/^󰈙[[:space:]]+//' <<< "$choice")"
+cmd_name="$(awk '{print $1}' <<< "$clean")"
+cmd_name="${cmd_name%,}"
+cmd_name="${cmd_name%%(*}"
+[[ -n "$cmd_name" ]] || exit 0
+
+term="${QTILE_TERMINAL:-alacritty}"
+term_bin="$(command -v "$term" 2>/dev/null || command -v alacritty || echo "/usr/bin/alacritty")"
+
+exec "$term_bin" -e man "$cmd_name"

@@ -1,0 +1,61 @@
+name: Qtile-Con CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Validation, Syntax, and Integration Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libpangocairo-1.0-0 libx11-dev libxtst-dev
+
+      - name: Install Python Dependencies & Qtile
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install "qtile>=0.28.0" psutil requests dbus-python cairocffi xcffib
+
+      - name: Python Bytecode Compilation Check
+        run: |
+          python -m compileall -q config.py qtile_config tests scripts
+
+      - name: Shell Scripts Syntax Check (bash -n)
+        run: |
+          for f in install.sh uninstall.sh scripts/*; do
+            if [ -f "$f" ] && head -n 1 "$f" | grep -Eq 'bash|sh'; then
+              echo "Validating bash syntax: $f"
+              bash -n "$f"
+            fi
+          done
+
+      - name: Qtile Configuration Validation (qtile check)
+        run: |
+          qtile check -c config.py
+
+      - name: Installer & Uninstaller Dry-Run Validation
+        run: |
+          chmod +x install.sh uninstall.sh
+          ./install.sh --dry-run
+          ./install.sh --dry-run --no-sysadmin --no-secondary --no-fonts --no-ai
+          ./uninstall.sh --dry-run
+
+      - name: Run Unified Integration Test Suite (9 Tests)
+        run: |
+          python3 -m unittest discover -s tests -v

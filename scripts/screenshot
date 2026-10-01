@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# File: screenshot
+# Description: Modular screenshot capture utility for Qtile window manager.
+# Ergonomics: Supports standard Mac bindings (Super+Shift+3, Super+Shift+4,
+#             Super+Shift+Ctrl+4) as well as legacy PrintScreen keys.
+# Dependencies: maim, xclip, notify-send
+# ==============================================================================
+set -euo pipefail
+
+# Mode argument: full (entire screen), region (selected rectangle), clipboard (direct to clipboard)
+mode="${1:-region}"
+
+# Target directory for saved screenshot files
+outdir="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+mkdir -p "$outdir"
+
+# Formatted timestamped filename
+file="$outdir/$(date +'%Y-%m-%d_%H-%M-%S').png"
+
+# Verify that maim capture utility is installed
+if ! command -v maim >/dev/null 2>&1; then
+  notify-send -u critical "Qtile Screenshot" "maim is not installed. Please install maim."
+  exit 1
+fi
+
+case "$mode" in
+  full)
+    # Capture entire active screen and save to disk
+    maim "$file"
+    if command -v xclip >/dev/null 2>&1; then
+      xclip -selection clipboard -t image/png -i "$file"
+    fi
+    notify-send "Screenshot Captured (Fullscreen)" "$file"
+    ;;
+
+  region)
+    # Interactive rectangle / window selection saved to disk and copied to clipboard
+    maim -s "$file"
+    if [[ -s "$file" ]]; then
+      if command -v xclip >/dev/null 2>&1; then
+        xclip -selection clipboard -t image/png -i "$file"
+      fi
+      notify-send "Screenshot Captured (Area Selection)" "$file"
+    fi
+    ;;
+
+  clipboard|region-clipboard)
+    # Direct selection into X11 clipboard without saving disk clutter
+    if command -v xclip >/dev/null 2>&1; then
+      maim -s | xclip -selection clipboard -t image/png
+      notify-send "Screenshot Copied" "Selection copied directly to clipboard."
+    else
+      maim -s "$file"
+      notify-send "Screenshot Captured" "$file"
+    fi
+    ;;
+
+  *)
+    echo "Usage: screenshot [full|region|clipboard]" >&2
+    exit 2
+    ;;
+esac
+
+exit 0

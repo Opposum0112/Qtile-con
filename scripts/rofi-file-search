@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""
+Fast fuzzy file search launcher backend for Rofi.
+Integrated as a mode tab in the application launcher.
+"""
+
+import mimetypes
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+COMMON_TEXT_EXTS = {
+    ".py", ".sh", ".bash", ".zsh", ".c", ".h", ".cpp", ".hpp", ".rs", ".go",
+    ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".scss", ".json", ".yaml",
+    ".yml", ".toml", ".ini", ".conf", ".cfg", ".md", ".markdown", ".txt",
+    ".rasi", ".lua", ".vim", ".desktop", ".xml", ".sql", ".env", ".service",
+}
+
+ICON_MAP = {
+    ".pdf": ("application-pdf", "󰈦"),
+    ".png": ("image-x-generic", "󰋩"),
+    ".jpg": ("image-x-generic", "󰋩"),
+    ".jpeg": ("image-x-generic", "󰋩"),
+    ".gif": ("image-x-generic", "󰋩"),
+    ".webp": ("image-x-generic", "󰋩"),
+    ".svg": ("image-x-generic", "󰋩"),
+    ".ico": ("image-x-generic", "󰋩"),
+    ".mp4": ("video-x-generic", "󰕼"),
+    ".mkv": ("video-x-generic", "󰕼"),
+    ".avi": ("video-x-generic", "󰕼"),
+    ".mov": ("video-x-generic", "󰕼"),
+    ".webm": ("video-x-generic", "󰕼"),
+    ".mp3": ("audio-x-generic", "󰎆"),
+    ".wav": ("audio-x-generic", "󰎆"),
+    ".flac": ("audio-x-generic", "󰎆"),
+    ".ogg": ("audio-x-generic", "󰎆"),
+    ".m4a": ("audio-x-generic", "󰎆"),
+    ".zip": ("package-x-generic", "󰛫"),
+    ".tar": ("package-x-generic", "󰛫"),
+    ".gz": ("package-x-generic", "󰛫"),
+    ".bz2": ("package-x-generic", "󰛫"),
+    ".xz": ("package-x-generic", "󰛫"),
+    ".7z": ("package-x-generic", "󰛫"),
+    ".rar": ("package-x-generic", "󰛫"),
+    ".py": ("text-x-python", "󰌠"),
+    ".sh": ("application-x-executable", "󰅪"),
+    ".bash": ("application-x-executable", "󰅪"),
+    ".zsh": ("application-x-executable", "󰅪"),
+    ".md": ("text-x-generic", "󰈙"),
+    ".txt": ("text-x-generic", "󰈙"),
+    ".json": ("preferences-system", "󰒓"),
+    ".yaml": ("preferences-system", "󰒓"),
+    ".yml": ("preferences-system", "󰒓"),
+    ".toml": ("preferences-system", "󰒓"),
+    ".ini": ("preferences-system", "󰒓"),
+    ".conf": ("preferences-system", "󰒓"),
+    ".rasi": ("preferences-system", "󰒓"),
+    ".c": ("text-x-generic", "󰈞"),
+    ".h": ("text-x-generic", "󰈞"),
+    ".cpp": ("text-x-generic", "󰈞"),
+    ".rs": ("text-x-generic", "󰈞"),
+    ".go": ("text-x-generic", "󰈞"),
+    ".js": ("text-x-generic", "󰈞"),
+    ".ts": ("text-x-generic", "󰈞"),
+    ".html": ("text-x-generic", "󰈞"),
+    ".css": ("text-x-generic", "󰈞"),
+}
+
+
+def find_file_backend() -> tuple[str, str]:
+    """Find the best available backend for listing files quickly."""
+    user_local_fd = os.path.expanduser("~/.local/bin/fd")
+    if os.path.isfile(user_local_fd) and os.access(user_local_fd, os.X_OK):
+        return ("fd", user_local_fd)
+
+    fd_bin = shutil.which("fd")
+    if fd_bin:
+        return ("fd", fd_bin)
+
+    fdfind_bin = shutil.which("fdfind")
+    if fdfind_bin:
+        return ("fdfind", fdfind_bin)
+
+    find_bin = shutil.which("find")
+    if find_bin:
+        return ("find", find_bin)
+
+    return ("none", "")
+
+
+def get_icon_for_file(path_str: str) -> str:
+    """Return an appropriate desktop icon name for a given file."""
+    ext = os.path.splitext(path_str)[1].lower()
+    if ext in ICON_MAP:
+        return ICON_MAP[ext][0]
+    if ext in COMMON_TEXT_EXTS:
+        return "text-x-generic"
+    return "text-x-generic"
+
+
+def get_nerd_icon_for_file(path_str: str) -> str:
+    """Return an appropriate Nerd Font symbol for a given file."""
+    if os.path.isdir(path_str):
+        return "󰉋"
+    ext = os.path.splitext(path_str)[1].lower()
+    if ext in ICON_MAP:
+        return ICON_MAP[ext][1]
+    if ext in COMMON_TEXT_EXTS:
+        return "󰈙"
+    return "󰈔"
+
+
+def is_text_file(path_obj: Path) -> bool:
+    """Determine whether a file is likely plain text/code or binary."""
+    ext = path_obj.suffix.lower()
+    if ext in COMMON_TEXT_EXTS:
+        return True
+    mime, _ = mimetypes.guess_type(str(path_obj))
+    if mime and (mime.startswith("text/") or mime in ("application/json", "application/javascript", "application/x-sh")):
+        return True
+    return False
+
+
+def resolve_path(raw: str) -> Path | None:
+    """Resolve raw string to existing Path object if possible."""
+    clean = raw.strip()
+    if not clean:
+        return None
+    # Strip any leading icon symbol if present
+    if len(clean) > 2 and clean[1] == " ":
+        clean = clean[2:].strip()
+
+    expanded = os.path.expanduser(clean)
+    p = Path(expanded).resolve()
+    if p.exists():
+        return p
+
+    root = Path(os.environ.get("QTILE_SEARCH_ROOT", os.path.expanduser("~"))).resolve()
+    candidate = root / clean
+    if candidate.exists():
+        return candidate.resolve()
+    return None
+
+
+def open_file_target(target_path: str) -> bool:
+    """Open a selected file in the appropriate application in the background."""
+    path_obj = resolve_path(target_path)
+    if not path_obj:
+        return False
+
+    term = os.environ.get("QTILE_TERMINAL", "alacritty")
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "micro"
+
+    term_bin = shutil.which(term) or shutil.which("alacritty") or "/usr/bin/alacritty"
+    editor_bin = shutil.which(editor) or shutil.which("micro") or "/usr/bin/micro"
+
+    if path_obj.is_dir():
+        fm = shutil.which("thunar") or shutil.which("pcmanfm") or shutil.which("nautilus") or shutil.which("xdg-open")
+        if fm:
+            subprocess.Popen([fm, str(path_obj)], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        else:
+            subprocess.Popen([term_bin, "--working-directory", str(path_obj)], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        return True
+
+    if is_text_file(path_obj):
+        subprocess.Popen([term_bin, "-e", editor_bin, str(path_obj)], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        return True
+
+    ext = path_obj.suffix.lower()
+    if ext in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"} and shutil.which("feh"):
+        subprocess.Popen(["feh", str(path_obj)], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    elif shutil.which("xdg-open"):
+        subprocess.Popen(["xdg-open", str(path_obj)], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    else:
+        subprocess.Popen([term_bin, "-e", editor_bin, str(path_obj)], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    return True
+
+
+def list_files(root_dir: str, filter_query: str = ""):
+    """Generate the file list for Rofi with clear naming and icons."""
+    home_dir = os.path.expanduser("~")
+    home_prefix = home_dir.rstrip(os.sep) + os.sep
+
+    backend_type, backend_bin = find_file_backend()
+    if backend_type in ("fd", "fdfind"):
+        cmd = [
+            backend_bin,
+            "--type", "f",
+            "--hidden",
+            "--follow",
+            "--exclude", ".git",
+            "--exclude", ".cache",
+            "--exclude", "node_modules",
+            "--exclude", ".venv",
+            "--exclude", ".cargo",
+            "--exclude", ".rustup",
+            "--exclude", ".npm",
+            "--exclude", ".local",
+            "--exclude", ".gemini",
+            "--exclude", ".mozilla",
+            "--exclude", ".lima",
+            "--exclude", "snap",
+            "--exclude", ".var",
+            "--exclude", "core*",
+            "--exclude", "*.log",
+            "--max-results", "10000",
+        ]
+        if filter_query:
+            cmd.extend([filter_query, root_dir])
+        else:
+            cmd.extend([".", root_dir])
+    elif backend_type == "find":
+        cmd = [
+            backend_bin,
+            root_dir,
+            "-maxdepth", "6",
+            "-type", "f",
+            "!", "-path", "*/.*",
+            "!", "-path", "*/node_modules/*",
+        ]
+        if filter_query:
+            cmd.extend(["-name", f"*{filter_query}*"])
+    else:
+        cmd = None
+
+    sys.stdout.write("\0keep-selection\x1ftrue\n")
+    sys.stdout.write("\0no-custom\x1ffalse\n")
+    sys.stdout.write("\0prompt\x1f󰈞 File\n")
+    if filter_query:
+        sys.stdout.write(f"\0message\x1f󰍉 Filtering files: '{filter_query}'\n")
+    else:
+        sys.stdout.write("\0message\x1f󰍉 Search files and documents\n")
+
+    emitted_count = 0
+    try:
+        if cmd:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=65536)
+            try:
+                for line in proc.stdout:
+                    abs_path = line.rstrip("\n")
+                    if not abs_path:
+                        continue
+                    if abs_path.startswith(home_prefix):
+                        disp_path = "~" + abs_path[len(home_dir):]
+                    else:
+                        disp_path = abs_path
+                    icon = get_icon_for_file(abs_path)
+                    nerd = get_nerd_icon_for_file(abs_path)
+                    display_text = f"{nerd}  {disp_path}"
+                    sys.stdout.write(f"{display_text}\0info\x1f{abs_path}\x1ficon\x1f{icon}\n")
+                    emitted_count += 1
+            finally:
+                proc.kill()
+                proc.wait()
+        else:
+            # Fallback python os.walk
+            for dirpath, dirnames, filenames in os.walk(root_dir):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", ".venv", ".cache")]
+                for f in filenames:
+                    if f.startswith("."):
+                        continue
+                    if filter_query and filter_query.lower() not in f.lower():
+                        continue
+                    abs_path = os.path.join(dirpath, f)
+                    if abs_path.startswith(home_prefix):
+                        disp_path = "~" + abs_path[len(home_dir):]
+                    else:
+                        disp_path = abs_path
+                    icon = get_icon_for_file(abs_path)
+                    nerd = get_nerd_icon_for_file(abs_path)
+                    display_text = f"{nerd}  {disp_path}"
+                    sys.stdout.write(f"{display_text}\0info\x1f{abs_path}\x1ficon\x1f{icon}\n")
+                    emitted_count += 1
+                    if emitted_count >= 5000:
+                        break
+                if emitted_count >= 5000:
+                    break
+
+        if emitted_count == 0 and filter_query:
+            sys.stdout.write(f"\0message\x1f󰅖 No files matching '{filter_query}'. Try another search.\n")
+            sys.stdout.write(f"󰅖 No files matching '{filter_query}'\0nonselectable\x1ftrue\x1ficon\x1fdialog-information\n")
+        sys.stdout.flush()
+    except (BrokenPipeError, IOError):
+        pass
+
+
+def main():
+    retv = os.environ.get("ROFI_RETV", "0")
+    search_root = os.environ.get("QTILE_SEARCH_ROOT", os.path.expanduser("~"))
+
+    # In rofi-script:
+    # RETV=0: Initial list request
+    # RETV=1: Selected an existing row
+    # RETV=2: Selected custom entry (user typed text and pressed Enter)
+    if retv == "1":
+        selected = os.environ.get("ROFI_INFO")
+        if not selected and len(sys.argv) > 1:
+            selected = sys.argv[1]
+        if selected and open_file_target(selected):
+            sys.exit(0)
+        # If selection was invalid, keep rofi open and show files
+        list_files(search_root)
+        sys.exit(0)
+
+    if retv == "2":
+        query = " ".join(sys.argv[1:]).strip()
+        # If user typed an existing path directly, open it
+        if query and open_file_target(query):
+            sys.exit(0)
+        # Otherwise, filter files matching query and stay open
+        list_files(search_root, filter_query=query)
+        sys.exit(0)
+
+    # CLI direct execution check
+    if "ROFI_RETV" not in os.environ and len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        if open_file_target(sys.argv[1]):
+            sys.exit(0)
+
+    list_files(search_root)
+
+
+if __name__ == "__main__":
+    main()

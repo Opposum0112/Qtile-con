@@ -1,0 +1,1453 @@
+#!/usr/bin/env python3
+"""Unified Tabbed Shortcuts & Keybindings Reference Palette for Qtile-Con.
+
+Provides an interactive tabbed launcher with 8 dedicated modes/tabs:
+  1. Qtile & Gestures (Dynamic real-time parsing from qtile_config/keys.py & libinput gestures)
+  2. Config (Environment Configuration Files & Locations Browser)
+  3. Guide (Systems Architecture & Settings Documentation Guide)
+  4. Kitty (Kitty GPU Terminal Emulator Keybindings & Kittens)
+  5. Micro (Micro Terminal Text Editor Keybindings & Multi-cursor)
+  6. Helix (Helix Modal Editor Keybindings & Kakoune Selection Navigation)
+  7. Yazi (Yazi Asynchronous Terminal File Manager Keybindings)
+  8. Nano (GNU Nano Editor Keybindings & Navigation)
+
+Qtile keybindings are parsed dynamically on every launch so that any modification
+to qtile_config/keys.py is automatically and immediately reflected in the cheatsheet.
+"""
+import ast
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+# Ensure UTF-8 locale
+os.environ["LANG"] = os.environ.get("LANG", "en_US.UTF-8")
+os.environ["LC_ALL"] = os.environ.get("LC_ALL", "en_US.UTF-8")
+
+
+def get_theme_path():
+    """Resolve active Rofi theme matching the theme selector."""
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    theme = os.environ.get("QTILE_ROFI_THEME", str(config_dir / "themes/catppuccin-mocha.rasi"))
+    if not os.path.isfile(theme):
+        repo_theme = Path(__file__).resolve().parent.parent / "themes/catppuccin-mocha.rasi"
+        if repo_theme.is_file():
+            theme = str(repo_theme)
+    return theme
+
+
+def get_scripts_dir():
+    config_scripts = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile/scripts"
+    if config_scripts.is_dir():
+        return str(config_scripts)
+    return str(Path(__file__).resolve().parent)
+
+
+SCRIPTS = get_scripts_dir()
+
+# ==============================================================================
+# 1. GESTURES & MOUSE ACTIONS
+# ==============================================================================
+GESTURES = [
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "3-Finger Swipe Left",
+        "description": "Switch to Next Workspace (Super + Alt + Right)",
+        "action": "notify:Gesture:Switch to Next Workspace (3-Finger Swipe Left)",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "3-Finger Swipe Right",
+        "description": "Switch to Previous Workspace (Super + Alt + Left)",
+        "action": "notify:Gesture:Switch to Prev Workspace (3-Finger Swipe Right)",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "3-Finger Swipe Up",
+        "description": "Cycle to Next Layout (Super + Alt + Up)",
+        "action": "notify:Gesture:Cycle to Next Layout (3-Finger Swipe Up)",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "3-Finger Swipe Down",
+        "description": "Cycle to Previous Layout (Super + Alt + Down)",
+        "action": "notify:Gesture:Cycle to Prev Layout (3-Finger Swipe Down)",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "4-Finger Swipe Left",
+        "description": "Move Active Window to Next Workspace & Follow",
+        "action": "notify:Gesture:Move Window to Next Workspace (4-Finger Swipe Left)",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "4-Finger Swipe Right",
+        "description": "Move Active Window to Prev Workspace & Follow",
+        "action": "notify:Gesture:Move Window to Prev Workspace (4-Finger Swipe Right)",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "4-Finger Swipe Up",
+        "description": "Open Application Launcher (Super + Alt + Return)",
+        "action": f"{SCRIPTS}/qtile-action launcher",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "4-Finger Swipe Down",
+        "description": "Open Terminal Emulator (Super + Alt + Shift + Return)",
+        "action": f"{SCRIPTS}/qtile-action monitor general",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "3/4-Finger Pinch Out",
+        "description": "Toggle Window Fullscreen (Super + Alt + f)",
+        "action": "qtile cmd-obj -o window -f toggle_fullscreen",
+    },
+    {
+        "category": "Touchpad Gestures",
+        "icon": "󰌌",
+        "keys": "3/4-Finger Pinch In",
+        "description": "Toggle Window Floating (Super + Alt + Space)",
+        "action": "qtile cmd-obj -o window -f toggle_floating",
+    },
+]
+
+MOUSE_ACTIONS = [
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "",
+        "keys": "Click Parrot Logo",
+        "description": "Left: App Launcher │ Right: Power Menu",
+        "action": f"{SCRIPTS}/qtile-action launcher",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰘚",
+        "keys": "Click RAM / CPU Widget",
+        "description": "Left: System Monitor (btop/htop) │ Right: Deep Investigate",
+        "action": f"{SCRIPTS}/qtile-action monitor cpu",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰒋",
+        "keys": "Click Process Widget",
+        "description": "Left: witr Process Menu │ Middle: BG Filter │ Right: Deep Trace",
+        "action": f"{SCRIPTS}/process-info --menu",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰒓",
+        "keys": "Click Services Widget",
+        "description": "Left: Services Management │ Right: Service Memory",
+        "action": f"{SCRIPTS}/services-info --menu",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰠬",
+        "keys": "Click SysAdmin Icon",
+        "description": "Left: Toggle Subwidgets (Cockpit, AI, Snapper) │ Right: SysAdmin Control Center",
+        "action": f"{SCRIPTS}/qtile-action sysadmin",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰟀",
+        "keys": "Click Cockpit Subwidget",
+        "description": "Left: Open Web Console (Port 9090) │ Right: Cockpit Service Menu",
+        "action": f"{SCRIPTS}/qtile-action cockpit",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰧑",
+        "keys": "Click AI Agents Subwidget",
+        "description": "Left/Right: AI Agents Monitor, Process Inspection & Termination Menu",
+        "action": f"{SCRIPTS}/qtile-action agents",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰁯",
+        "keys": "Click Snapper Subwidget",
+        "description": "Left: Immediate Rollback Menu │ Right: Create Manual Snapshot",
+        "action": f"{SCRIPTS}/qtile-action snapper",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰖐",
+        "keys": "Click Weather Widget",
+        "description": "Left: Hourly Card Dashboard │ Right: Configure City",
+        "action": f"{SCRIPTS}/qtile-action weather",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰖩",
+        "keys": "Click Network Widget",
+        "description": "Left: Wi-Fi Menu │ Right: Connection Editor",
+        "action": f"{SCRIPTS}/qtile-action wifi",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰕾",
+        "keys": "Click Volume Widget",
+        "description": "Left: Volume Slider │ Right: Audio Sinks │ Scroll: Vol +/-",
+        "action": f"{SCRIPTS}/qtile-action slider",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰁹",
+        "keys": "Click Battery Widget",
+        "description": "Left: Battery Health Diagnostics Notification",
+        "action": f"{SCRIPTS}/battery-status --notify",
+    },
+    {
+        "category": "Bar Widget Clicks",
+        "icon": "󰗠",
+        "keys": "Click Health Widget",
+        "description": "Left: Deep System Watchdog Investigation",
+        "action": f"{SCRIPTS}/sys-investigate",
+    },
+]
+
+# Static mappings for known commands to keep nice human-readable descriptions
+CMD_DESCRIPTIONS = {
+    "alacritty": ("󰆍", "Launchers & Tools", "Terminal Emulator (Alacritty)"),
+    "qtile-action launcher": ("󰍉", "Launchers & Tools", "Application Launcher (Rofi Combi: Apps & Run)"),
+    "qtile-action run": ("󰌌", "Launchers & Tools", "Run Command / CLI Binary Launcher"),
+    "thunar": ("󰉋", "Launchers & Tools", "Graphical File Manager (Thunar with plugins)"),
+    "yazi": ("󰒋", "Launchers & Tools", "Asynchronous Terminal File Manager (Yazi)"),
+    "keybindings-cheatsheet configs": ("󰒓", "Launchers & Tools", "Environment Configuration Files & Locations Browser"),
+    "keybindings-cheatsheet": ("󰌌", "Launchers & Tools", "Shortcuts Reference Palette & Tabbed Cheatsheet"),
+    "qtile-action cheatsheet": ("󰌌", "Launchers & Tools", "Keybinding Cheatsheet & Reference Palette"),
+    "qtile-action configs": ("󰒓", "Launchers & Tools", "Environment Configuration Files & Locations Browser"),
+    "qtile-action clipboard": ("󰅍", "Launchers & Tools", "Clipboard History Manager (Greenclip / Rofi)"),
+    "qtile-action slider": ("󰕾", "Launchers & Tools", "Interactive Floating Volume Slider & Sinks"),
+    "qtile-action man": ("󰈙", "Launchers & Tools", "Manual Pages & Documentation Lookup (Rofi man)"),
+    "qtile-action restore all": ("󰖯", "Window Focus & Layout", "Restore All Minimized Windows on Workspace"),
+    "qtile-action restore": ("󰖯", "Window Focus & Layout", "Browse & Restore Minimized Windows Palette (Rofi)"),
+    "screenshot full": ("󰄄", "Screenshots & Power", "Fullscreen Screenshot (Mac Ergonomics)"),
+    "screenshot region": ("󰄄", "Screenshots & Power", "Area / Window Screenshot to File (Mac Ergonomics)"),
+    "screenshot clipboard": ("󰄄", "Screenshots & Power", "Area Screenshot Directly to Clipboard (Mac Ergonomics)"),
+    "logout-menu": ("󰐥", "Screenshots & Power", "Power & Session Logout Menu (Lock, Reboot, Poweroff)"),
+    "i3lock": ("󰌾", "Screenshots & Power", "Instant Screen Lock (i3lock)"),
+    "set-theme": ("󰏘", "Theme & Styling", "Global Theme Selector (Catppuccin, Gruvbox, GitHub, Ayu, Solarized)"),
+    "set-wallpaper": ("󰸉", "Theme & Styling", "Wallpaper & Font Thumbnail Grid Selector"),
+    "qtile-action layout": ("󰕰", "Window Focus & Layout", "Layout Selector Menu (Columns, Scroller, Monad, etc.)"),
+    "pamixer --decrease": ("󰕾", "Media & Hardware", "Decrease Audio Volume (-5%)"),
+    "pamixer --increase": ("󰕾", "Media & Hardware", "Increase Audio Volume (+5%)"),
+    "pamixer --toggle-mute": ("󰕾", "Media & Hardware", "Toggle Audio Mute"),
+    "brightnessctl set 5%-": ("󰃞", "Media & Hardware", "Decrease Screen Brightness (-5%)"),
+    "brightnessctl set +5%": ("󰃠", "Media & Hardware", "Increase Screen Brightness (+5%)"),
+    "brightnessctl --device='*kbd*' set 10%-": ("󰌌", "Media & Hardware", "Decrease Keyboard Backlight (-10%)"),
+    "brightnessctl --device='*kbd*' set +10%": ("󰌌", "Media & Hardware", "Increase Keyboard Backlight (+10%)"),
+}
+
+LAZY_DESCRIPTIONS = {
+    "restart": ("󰑐", "Screenshots & Power", "Restart / Reload Qtile Window Manager"),
+    "kill": ("󰅚", "Window Focus & Layout", "Close / Kill Focused Window"),
+    "next_layout": ("󰕰", "Window Focus & Layout", "Cycle to Next Layout (Columns, Scroller, Monad, etc.)"),
+    "prev_layout": ("󰕰", "Window Focus & Layout", "Cycle to Previous Layout"),
+    "toggle_maximize": ("󰊓", "Window Focus & Layout", "Toggle Active Window Maximize (With Theme Borders)"),
+    "toggle_minimize": ("󰊒", "Window Focus & Layout", "Minimize Active Window (Hide & Exclude from Layout)"),
+    "toggle_floating": ("󰉈", "Window Focus & Layout", "Toggle Active Window Floating Mode"),
+    "toggle_fullscreen": ("󰊓", "Window Focus & Layout", "Toggle Active Window Fullscreen"),
+    "cycle_width": ("󰤼", "Window Focus & Layout", "Cycle Column Width (1/3, 1/2, 2/3, Full)"),
+    "grow_width": ("󰤼", "Window Focus & Layout", "Grow Column Width in Viewport"),
+    "shrink_width": ("󰤼", "Window Focus & Layout", "Shrink Column Width in Viewport"),
+    "center": ("󰤼", "Window Focus & Layout", "Center Active Column in Viewport"),
+    "toggle_split": ("󰤼", "Window Focus & Layout", "Toggle Column Split / Stacked Mode"),
+    "expel": ("󰤼", "Window Focus & Layout", "Expel Active Window to New Column"),
+    "consume_left": ("󰤼", "Window Focus & Layout", "Consume / Merge Column to the Left"),
+    "consume_right": ("󰤼", "Window Focus & Layout", "Consume / Merge Column to the Right"),
+    "left": ("󰁍", "Window Focus & Layout", "Focus Window to the Left"),
+    "right": ("󰁔", "Window Focus & Layout", "Focus Window to the Right"),
+    "up": ("󰁝", "Window Focus & Layout", "Focus Window Upwards"),
+    "down": ("󰁅", "Window Focus & Layout", "Focus Window Downwards"),
+    "shuffle_left": ("󰁍", "Window Focus & Layout", "Shuffle / Swap Focused Window to the Left"),
+    "shuffle_right": ("󰁔", "Window Focus & Layout", "Shuffle / Swap Focused Window to the Right"),
+    "shuffle_up": ("󰁝", "Window Focus & Layout", "Shuffle Focused Window Upwards"),
+    "shuffle_down": ("󰁅", "Window Focus & Layout", "Shuffle Focused Window Downwards"),
+    "next_group": ("󰮯", "Workspaces & Tags", "Switch to Next Workspace (Bracket Navigation)"),
+    "prev_group": ("󰮯", "Workspaces & Tags", "Switch to Previous Workspace (Bracket Navigation)"),
+    "restore_minimized_window": ("󰖯", "Window Focus & Layout", "Restore Most Recently Minimized Window"),
+    "restore_all_minimized_windows": ("󰖯", "Window Focus & Layout", "Restore All Minimized Windows on Workspace"),
+    "window_to_prev_group": ("󰮯", "Workspaces & Tags", "Move Focused Window to Prev Workspace & Follow"),
+    "window_to_next_group": ("󰮯", "Workspaces & Tags", "Move Focused Window to Next Workspace & Follow"),
+}
+
+
+# ==============================================================================
+# 2. DYNAMIC QTILE KEYBINDINGS LOADER
+# ==============================================================================
+def get_qtile_keybindings():
+    """Dynamically load and parse Qtile keyboard shortcuts from qtile_config/keys.py.
+
+    Guarantees that any changes made to keys.py are automatically and immediately
+    reflected in the cheatsheet without requiring manual updates to the catalog.
+    """
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    active_keys_file = config_dir / "qtile_config" / "keys.py"
+    repo_keys_file = Path(__file__).resolve().parent.parent / "qtile_config" / "keys.py"
+
+    custom_keys = os.environ.get("QTILE_KEYS_FILE")
+    if custom_keys and Path(custom_keys).is_file():
+        keys_file = Path(custom_keys)
+    elif active_keys_file.is_file() and repo_keys_file.is_file():
+        try:
+            if repo_keys_file.stat().st_mtime >= active_keys_file.stat().st_mtime:
+                keys_file = repo_keys_file
+            else:
+                keys_file = active_keys_file
+        except OSError:
+            keys_file = active_keys_file
+    elif active_keys_file.is_file():
+        keys_file = active_keys_file
+    else:
+        keys_file = repo_keys_file
+
+    keys_list = []
+    if keys_file.is_file():
+        try:
+            sys_path_added = str(keys_file.parent.parent)
+            if sys_path_added not in sys.path:
+                sys.path.insert(0, sys_path_added)
+            import importlib.machinery
+            import importlib.util
+            loader = importlib.machinery.SourceFileLoader("qtile_keys_live", str(keys_file))
+            spec = importlib.util.spec_from_loader("qtile_keys_live", loader)
+            if spec:
+                keys_mod = importlib.util.module_from_spec(spec)
+                loader.exec_module(keys_mod)
+                keys_list = getattr(keys_mod, "keys", [])
+        except Exception as e:
+            sys.stderr.write(f"Notice: Loading dynamic keys from {keys_file}: {e}\n")
+
+    if not keys_list:
+        try:
+            from qtile_config.keys import keys as fallback_keys
+            keys_list = fallback_keys
+        except Exception:
+            pass
+
+    MOD_MAP = {"mod4": "Super", "mod1": "Alt", "control": "Ctrl", "shift": "Shift"}
+    KEY_MAP = {
+        "Return": "Return", "space": "Space", "Escape": "Escape", "Tab": "Tab",
+        "bracketleft": "[", "bracketright": "]", "equal": "=", "minus": "-",
+        "comma": ", (comma)", "period": ". (period)", "slash": "/", "question": "?",
+        "Left": "Left", "Right": "Right", "Up": "Up", "Down": "Down"
+    }
+
+    dynamic_items = []
+    seen_combos = set()
+
+    for k in keys_list:
+        parts = [MOD_MAP[m] for m in ["mod4", "control", "shift", "mod1"] if m in getattr(k, "modifiers", [])]
+        raw_key = getattr(k, "key", "")
+        parts.append(KEY_MAP.get(raw_key, raw_key))
+        combo = " + ".join(parts)
+
+        if combo in seen_combos:
+            continue
+        seen_combos.add(combo)
+
+        commands = getattr(k, "commands", [])
+        first_cmd = commands[0] if commands else None
+        cmd_name = first_cmd.name if first_cmd else ""
+        args = first_cmd.args if (first_cmd and first_cmd.args) else ()
+        arg0 = str(args[0]) if args else ""
+
+        explicit_desc = getattr(k, "desc", "") or ""
+        desc = explicit_desc
+        icon = "󰌌"
+        cat = "Window Focus & Layout"
+        action = ""
+
+        if cmd_name == "spawn":
+            action = arg0
+            matched = False
+            for target_substr, (s_icon, s_cat, s_desc) in CMD_DESCRIPTIONS.items():
+                if target_substr in arg0:
+                    icon, cat = s_icon, s_cat
+                    desc = explicit_desc or s_desc
+                    matched = True
+                    break
+            if not matched:
+                icon = "󰆍"
+                cat = "Launchers & Tools"
+                base_cmd = os.path.basename(arg0.split()[0]) if arg0 else "command"
+                desc = explicit_desc or f"Launch {base_cmd}"
+        elif cmd_name in LAZY_DESCRIPTIONS:
+            icon, cat, default_desc = LAZY_DESCRIPTIONS[cmd_name]
+            desc = explicit_desc or default_desc
+            action = f"qtile cmd-obj -o layout -f {cmd_name}" if any(w in cmd_name for w in ("width", "split", "center", "column", "expel")) else f"qtile cmd-obj -o window -f {cmd_name}"
+        elif cmd_name == "toscreen":
+            grp_name = str(args[0]) if args else raw_key
+            icon = "󰆍"
+            cat = "Workspaces & Tags"
+            desc = explicit_desc or f"Switch to Workspace {grp_name}"
+            action = f"notify:Workspace:Switch to Workspace {grp_name}"
+        elif cmd_name == "togroup":
+            grp_name = str(args[0]) if args else raw_key
+            icon = "󰆍"
+            cat = "Workspaces & Tags"
+            desc = explicit_desc or f"Move Focused Window to Workspace {grp_name} & Follow"
+            action = f"notify:Workspace:Move Window to Workspace {grp_name}"
+        elif cmd_name == "function":
+            fn = args[0] if args else None
+            fn_name = getattr(fn, "__name__", "")
+            if fn_name in LAZY_DESCRIPTIONS:
+                icon, cat, desc = LAZY_DESCRIPTIONS[fn_name]
+            elif fn_name:
+                desc = fn_name.replace("_", " ").title()
+            action = f"notify:Function:{desc}"
+        else:
+            desc = desc or (f"Execute {cmd_name}" if cmd_name else "Shortcut Action")
+            action = f"notify:Action:{desc}"
+
+        dynamic_items.append({
+            "category": cat,
+            "icon": icon,
+            "keys": combo,
+            "description": desc,
+            "action": action,
+        })
+
+    for g in GESTURES:
+        dynamic_items.append(g)
+    for m in MOUSE_ACTIONS:
+        dynamic_items.append(m)
+
+    return dynamic_items
+
+
+# ==============================================================================
+# 3. DEVELOPER TOOLS SHORTCUTS (KITTY, MICRO, HELIX, YAZI, NANO)
+# ==============================================================================
+KITTY_SHORTCUTS = [
+    # Window Management
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + Enter", "description": "New Window in current layout", "action": "notify:Kitty:New Window (Ctrl+Shift+Enter)"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + w", "description": "Close active window", "action": "notify:Kitty:Close Active Window (Ctrl+Shift+w)"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + ]", "description": "Focus next window", "action": "notify:Kitty:Focus Next Window (Ctrl+Shift+])"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + [", "description": "Focus previous window", "action": "notify:Kitty:Focus Previous Window (Ctrl+Shift+[)"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + f", "description": "Move active window forward", "action": "notify:Kitty:Move Window Forward (Ctrl+Shift+f)"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + b", "description": "Move active window backward", "action": "notify:Kitty:Move Window Backward (Ctrl+Shift+b)"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + `", "description": "Move active window to top", "action": "notify:Kitty:Move Window to Top (Ctrl+Shift+`)"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + r", "description": "Start interactive window resize mode", "action": "notify:Kitty:Resize Mode (Ctrl+Shift+r)"},
+    {"category": "Window Management", "icon": "󰆍", "keys": "Ctrl + Shift + 1 .. 9", "description": "Focus specific window 1..9", "action": "notify:Kitty:Focus Window 1..9 (Ctrl+Shift+1..9)"},
+    # Tab Management
+    {"category": "Tab Management", "icon": "󰆍", "keys": "Ctrl + Shift + t", "description": "Open new tab", "action": "notify:Kitty:New Tab (Ctrl+Shift+t)"},
+    {"category": "Tab Management", "icon": "󰆍", "keys": "Ctrl + Shift + q", "description": "Close active tab", "action": "notify:Kitty:Close Tab (Ctrl+Shift+q)"},
+    {"category": "Tab Management", "icon": "󰆍", "keys": "Ctrl + Shift + Right / Left", "description": "Next / Previous tab", "action": "notify:Kitty:Next/Prev Tab (Ctrl+Shift+Right/Left)"},
+    {"category": "Tab Management", "icon": "󰆍", "keys": "Ctrl + Shift + . / ,", "description": "Move tab forward / backward", "action": "notify:Kitty:Move Tab Forward/Backward (Ctrl+Shift+./,)"},
+    {"category": "Tab Management", "icon": "󰆍", "keys": "Ctrl + Shift + Alt + t", "description": "Set / rename tab title", "action": "notify:Kitty:Rename Tab Title (Ctrl+Shift+Alt+t)"},
+    # Layouts & Splits
+    {"category": "Layouts & Splits", "icon": "󰆍", "keys": "Ctrl + Shift + l", "description": "Cycle to next window layout (splits, stack, grid, fat, tall)", "action": "notify:Kitty:Cycle Layout (Ctrl+Shift+l)"},
+    {"category": "Layouts & Splits", "icon": "󰆍", "keys": "Ctrl + Shift + z", "description": "Toggle zoomed / maximized window in stack layout", "action": "notify:Kitty:Toggle Zoom (Ctrl+Shift+z)"},
+    # Scrolling & Search
+    {"category": "Scrolling & Search", "icon": "󰆍", "keys": "Ctrl + Shift + Up / Down", "description": "Scroll terminal buffer one line up / down", "action": "notify:Kitty:Scroll Line (Ctrl+Shift+Up/Down)"},
+    {"category": "Scrolling & Search", "icon": "󰆍", "keys": "Ctrl + Shift + PageUp / PageDown", "description": "Scroll terminal buffer one page up / down", "action": "notify:Kitty:Scroll Page (Ctrl+Shift+PageUp/Down)"},
+    {"category": "Scrolling & Search", "icon": "󰆍", "keys": "Ctrl + Shift + Home / End", "description": "Scroll directly to top / bottom of buffer", "action": "notify:Kitty:Scroll Top/Bottom (Ctrl+Shift+Home/End)"},
+    {"category": "Scrolling & Search", "icon": "󰆍", "keys": "Ctrl + Shift + h", "description": "View scrollback buffer in pager / search", "action": "notify:Kitty:Search Scrollback (Ctrl+Shift+h)"},
+    {"category": "Scrolling & Search", "icon": "󰆍", "keys": "Ctrl + Shift + g", "description": "View last command output in pager", "action": "notify:Kitty:View Last Output (Ctrl+Shift+g)"},
+    # Clipboard & Font Size
+    {"category": "Clipboard & Font Size", "icon": "󰆍", "keys": "Ctrl + Shift + c", "description": "Copy selection to system clipboard", "action": "notify:Kitty:Copy to Clipboard (Ctrl+Shift+c)"},
+    {"category": "Clipboard & Font Size", "icon": "󰆍", "keys": "Ctrl + Shift + v", "description": "Paste from system clipboard", "action": "notify:Kitty:Paste from Clipboard (Ctrl+Shift+v)"},
+    {"category": "Clipboard & Font Size", "icon": "󰆍", "keys": "Ctrl + Shift + s", "description": "Paste from primary selection buffer", "action": "notify:Kitty:Paste from Selection (Ctrl+Shift+s)"},
+    {"category": "Clipboard & Font Size", "icon": "󰆍", "keys": "Ctrl + Shift + Equal (+)", "description": "Increase terminal font size (+1pt)", "action": "notify:Kitty:Increase Font Size (Ctrl+Shift+=)"},
+    {"category": "Clipboard & Font Size", "icon": "󰆍", "keys": "Ctrl + Shift + Minus (-)", "description": "Decrease terminal font size (-1pt)", "action": "notify:Kitty:Decrease Font Size (Ctrl+Shift+-)"},
+    {"category": "Clipboard & Font Size", "icon": "󰆍", "keys": "Ctrl + Shift + Backspace", "description": "Reset terminal font size to default", "action": "notify:Kitty:Reset Font Size (Ctrl+Shift+Backspace)"},
+    # Hints & Kittens
+    {"category": "Hints & Kittens", "icon": "󰆍", "keys": "Ctrl + Shift + e", "description": "Open URL / file path hints picker", "action": "notify:Kitty:Hints Picker (Ctrl+Shift+e)"},
+    {"category": "Hints & Kittens", "icon": "󰆍", "keys": "Ctrl + Shift + p > f", "description": "Insert matched file path into terminal", "action": "notify:Kitty:Insert Path Hint (Ctrl+Shift+p > f)"},
+    {"category": "Hints & Kittens", "icon": "󰆍", "keys": "Ctrl + Shift + p > l", "description": "Insert line hint into terminal", "action": "notify:Kitty:Insert Line Hint (Ctrl+Shift+p > l)"},
+    {"category": "Hints & Kittens", "icon": "󰆍", "keys": "Ctrl + Shift + p > w", "description": "Insert word hint into terminal", "action": "notify:Kitty:Insert Word Hint (Ctrl+Shift+p > w)"},
+    {"category": "Hints & Kittens", "icon": "󰆍", "keys": "Ctrl + Shift + u", "description": "Open Unicode character input & picker", "action": "notify:Kitty:Unicode Picker (Ctrl+Shift+u)"},
+    {"category": "Hints & Kittens", "icon": "󰆍", "keys": "Ctrl + Shift + F5", "description": "Reload kitty.conf configuration without restarting", "action": "notify:Kitty:Reload Configuration (Ctrl+Shift+F5)"},
+    {"category": "Hints & Kittens", "icon": "󰆍", "keys": "Ctrl + Shift + F6", "description": "Open debug / log inspector window", "action": "notify:Kitty:Debug Window (Ctrl+Shift+F6)"},
+]
+
+MICRO_SHORTCUTS = [
+    # File Operations
+    {"category": "File Operations", "icon": "󰅩", "keys": "Ctrl + s", "description": "Save current file buffer", "action": "notify:Micro:Save File (Ctrl+s)"},
+    {"category": "File Operations", "icon": "󰅩", "keys": "Ctrl + q", "description": "Quit editor (prompts if unsaved changes exist)", "action": "notify:Micro:Quit Editor (Ctrl+q)"},
+    {"category": "File Operations", "icon": "󰅩", "keys": "Ctrl + o", "description": "Open file prompt", "action": "notify:Micro:Open File (Ctrl+o)"},
+    {"category": "File Operations", "icon": "󰅩", "keys": "Ctrl + p", "description": "Command palette / interactive command bar", "action": "notify:Micro:Command Palette (Ctrl+p)"},
+    # Editing & Clipboard
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + z", "description": "Undo last edit", "action": "notify:Micro:Undo (Ctrl+z)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + y", "description": "Redo last undone change", "action": "notify:Micro:Redo (Ctrl+y)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + c", "description": "Copy selected text to clipboard", "action": "notify:Micro:Copy (Ctrl+c)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + x", "description": "Cut selected text to clipboard", "action": "notify:Micro:Cut (Ctrl+x)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + v", "description": "Paste text from clipboard", "action": "notify:Micro:Paste (Ctrl+v)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + a", "description": "Select all text in buffer", "action": "notify:Micro:Select All (Ctrl+a)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + d", "description": "Duplicate current line", "action": "notify:Micro:Duplicate Line (Ctrl+d)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Ctrl + k", "description": "Cut entire current line to clipboard", "action": "notify:Micro:Cut Line (Ctrl+k)"},
+    {"category": "Editing & Clipboard", "icon": "󰅩", "keys": "Alt + /  or  Ctrl + _", "description": "Toggle line comment (#, //, etc.)", "action": "notify:Micro:Toggle Comment (Alt+/)"},
+    # Multi-Cursor
+    {"category": "Multi-Cursor", "icon": "󰅩", "keys": "Ctrl + Alt + Up", "description": "Spawn multi-cursor on line above", "action": "notify:Micro:Spawn Cursor Above (Ctrl+Alt+Up)"},
+    {"category": "Multi-Cursor", "icon": "󰅩", "keys": "Ctrl + Alt + Down", "description": "Spawn multi-cursor on line below", "action": "notify:Micro:Spawn Cursor Below (Ctrl+Alt+Down)"},
+    {"category": "Multi-Cursor", "icon": "󰅩", "keys": "Alt + n", "description": "Spawn cursor on next occurrence of selection", "action": "notify:Micro:Spawn Cursor on Next Match (Alt+n)"},
+    {"category": "Multi-Cursor", "icon": "󰅩", "keys": "Alt + p", "description": "Remove last spawned multi-cursor", "action": "notify:Micro:Remove Last Cursor (Alt+p)"},
+    {"category": "Multi-Cursor", "icon": "󰅩", "keys": "Alt + x", "description": "Skip current occurrence and find next match", "action": "notify:Micro:Skip and Find Next (Alt+x)"},
+    {"category": "Multi-Cursor", "icon": "󰅩", "keys": "Escape", "description": "Clear all multi-cursors / cancel selection", "action": "notify:Micro:Clear Multi-Cursors (Escape)"},
+    # Search & Navigation
+    {"category": "Search & Navigation", "icon": "󰅩", "keys": "Ctrl + f", "description": "Find text in current buffer", "action": "notify:Micro:Find (Ctrl+f)"},
+    {"category": "Search & Navigation", "icon": "󰅩", "keys": "Ctrl + n", "description": "Jump to next search match", "action": "notify:Micro:Next Match (Ctrl+n)"},
+    {"category": "Search & Navigation", "icon": "󰅩", "keys": "Ctrl + p", "description": "Jump to previous search match", "action": "notify:Micro:Previous Match (Ctrl+p)"},
+    {"category": "Search & Navigation", "icon": "󰅩", "keys": "Alt + r", "description": "Find and interactive replace text", "action": "notify:Micro:Find and Replace (Alt+r)"},
+    {"category": "Search & Navigation", "icon": "󰅩", "keys": "Ctrl + l", "description": "Jump to line number (:line)", "action": "notify:Micro:Jump to Line (Ctrl+l)"},
+    # Split Panes & Tabs
+    {"category": "Split Panes & Tabs", "icon": "󰅩", "keys": "Ctrl + e > vsplit <file>", "description": "Split view vertically with file", "action": "notify:Micro:Vertical Split (Ctrl+e vsplit)"},
+    {"category": "Split Panes & Tabs", "icon": "󰅩", "keys": "Ctrl + e > hsplit <file>", "description": "Split view horizontally with file", "action": "notify:Micro:Horizontal Split (Ctrl+e hsplit)"},
+    {"category": "Split Panes & Tabs", "icon": "󰅩", "keys": "Ctrl + w", "description": "Cycle focus between split panes", "action": "notify:Micro:Cycle Split Panes (Ctrl+w)"},
+    {"category": "Split Panes & Tabs", "icon": "󰅩", "keys": "Ctrl + t", "description": "Open new tab", "action": "notify:Micro:New Tab (Ctrl+t)"},
+    {"category": "Split Panes & Tabs", "icon": "󰅩", "keys": "Alt + , / .", "description": "Switch to previous / next editor tab", "action": "notify:Micro:Prev/Next Tab (Alt+, / .)"},
+    # Help & Commands
+    {"category": "Help & Commands", "icon": "󰅩", "keys": "Ctrl + g", "description": "Open interactive help document", "action": "notify:Micro:Help (Ctrl+g)"},
+    {"category": "Help & Commands", "icon": "󰅩", "keys": "Ctrl + e", "description": "Open command line prompt (:set tabsize 4, :term, etc.)", "action": "notify:Micro:Command Prompt (Ctrl+e)"},
+]
+
+HELIX_SHORTCUTS = [
+    # Normal Mode Movement
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "h / j / k / l", "description": "Move cursor left / down / up / right", "action": "notify:Helix:Movement (h/j/k/l)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "w", "description": "Jump forward to beginning of next word", "action": "notify:Helix:Next Word Start (w)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "b", "description": "Jump backward to beginning of previous word", "action": "notify:Helix:Prev Word Start (b)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "e", "description": "Jump forward to end of current/next word", "action": "notify:Helix:Word End (e)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "W / B / E", "description": "Jump forward / backward by WORD (whitespace-delimited)", "action": "notify:Helix:WORD Navigation (W/B/E)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "0 / ^", "description": "Jump to beginning of line / first non-blank character", "action": "notify:Helix:Line Start (0 / ^)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "$", "description": "Jump to end of line", "action": "notify:Helix:Line End ($)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "g + g", "description": "Go to first line of buffer", "action": "notify:Helix:Go to Top (g+g)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "g + e", "description": "Go to last line of buffer", "action": "notify:Helix:Go to Bottom (g+e)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "Ctrl + u / Ctrl + d", "description": "Scroll half-page up / down", "action": "notify:Helix:Half Page Scroll (Ctrl+u/d)"},
+    {"category": "Normal Mode Movement", "icon": "󰘦", "keys": "Ctrl + b / Ctrl + f", "description": "Scroll full-page up / down", "action": "notify:Helix:Full Page Scroll (Ctrl+b/f)"},
+    # Selection & Expansion
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": "x", "description": "Select current line (repeat to extend downwards)", "action": "notify:Helix:Select Line (x)"},
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": "X", "description": "Extend selection upwards line-by-line", "action": "notify:Helix:Extend Selection Up (X)"},
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": "v", "description": "Enter / toggle Select (Visual) mode", "action": "notify:Helix:Select Mode (v)"},
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": ";", "description": "Collapse selection to single cursor", "action": "notify:Helix:Collapse Selection (;)"},
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": "Alt + ;", "description": "Flip cursor to opposite end of selection", "action": "notify:Helix:Flip Cursor (Alt+;)"},
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": "Alt + s", "description": "Split active selection into separate lines", "action": "notify:Helix:Split Selection (Alt+s)"},
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": "s", "description": "Select regex matches inside active selection", "action": "notify:Helix:Select by Regex (s)"},
+    {"category": "Selection & Expansion", "icon": "󰘦", "keys": "S", "description": "Split active selection by regex matches", "action": "notify:Helix:Split by Regex (S)"},
+    # Changes & Editing
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "i / a", "description": "Insert mode before / after cursor", "action": "notify:Helix:Insert Mode (i / a)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "I / A", "description": "Insert mode at line start / line end", "action": "notify:Helix:Line Insert (I / A)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "o / O", "description": "Open line below / above and enter Insert mode", "action": "notify:Helix:Open Line (o / O)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "c", "description": "Change selection (delete text and enter Insert mode)", "action": "notify:Helix:Change (c)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "d", "description": "Delete selection (yanked to register)", "action": "notify:Helix:Delete (d)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "y", "description": "Yank selection into register", "action": "notify:Helix:Yank (y)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "p / P", "description": "Paste after / before cursor", "action": "notify:Helix:Paste (p / P)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "r", "description": "Replace single character under cursor", "action": "notify:Helix:Replace Char (r)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "u / U", "description": "Undo / Redo change", "action": "notify:Helix:Undo/Redo (u / U)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "> / <", "description": "Indent / outdent selected lines", "action": "notify:Helix:Indent (>/<)"},
+    {"category": "Changes & Editing", "icon": "󰘦", "keys": "~", "description": "Toggle letter case (lower/upper)", "action": "notify:Helix:Toggle Case (~)"},
+    # Space Leader Menu
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + f", "description": "Fuzzy file picker", "action": "notify:Helix:File Picker (Space+f)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + b", "description": "Buffer list & switcher", "action": "notify:Helix:Buffer Switcher (Space+b)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + s", "description": "Document symbol picker (LSP)", "action": "notify:Helix:Document Symbols (Space+s)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + S", "description": "Workspace symbol picker (LSP)", "action": "notify:Helix:Workspace Symbols (Space+S)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + d", "description": "Diagnostics picker (errors/warnings)", "action": "notify:Helix:Diagnostics (Space+d)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + k", "description": "Hover documentation popup (LSP)", "action": "notify:Helix:Hover Docs (Space+k)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + r", "description": "Rename symbol under cursor (LSP)", "action": "notify:Helix:Rename Symbol (Space+r)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + a", "description": "Code action quickfix (LSP)", "action": "notify:Helix:Code Action (Space+a)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + w", "description": "Window split actions (vsplit, hsplit)", "action": "notify:Helix:Window Menu (Space+w)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + y", "description": "Yank selection directly to system clipboard", "action": "notify:Helix:Yank to System Clipboard (Space+y)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + p", "description": "Paste from system clipboard", "action": "notify:Helix:Paste System Clipboard (Space+p)"},
+    {"category": "Space Leader Menu", "icon": "󰘦", "keys": "Space + ?", "description": "Command reference / cheatsheet palette", "action": "notify:Helix:Command Palette (Space+?)"},
+    # Search & Characters
+    {"category": "Search & Characters", "icon": "󰘦", "keys": "/ / ?", "description": "Search forward / backward regex pattern", "action": "notify:Helix:Search Pattern (/ / ?)"},
+    {"category": "Search & Characters", "icon": "󰘦", "keys": "n / N", "description": "Next / Previous search match", "action": "notify:Helix:Next/Prev Match (n / N)"},
+    {"category": "Search & Characters", "icon": "󰘦", "keys": "*", "description": "Search pattern for word under cursor", "action": "notify:Helix:Search Word (*)"},
+    {"category": "Search & Characters", "icon": "󰘦", "keys": "f <char>", "description": "Find character forward on line", "action": "notify:Helix:Find Char Forward (f)"},
+    {"category": "Search & Characters", "icon": "󰘦", "keys": "F <char>", "description": "Find character backward on line", "action": "notify:Helix:Find Char Backward (F)"},
+    {"category": "Search & Characters", "icon": "󰘦", "keys": "t <char>", "description": "Till character forward (stop before char)", "action": "notify:Helix:Till Char Forward (t)"},
+    {"category": "Search & Characters", "icon": "󰘦", "keys": "T <char>", "description": "Till character backward", "action": "notify:Helix:Till Char Backward (T)"},
+    # Splits & Files
+    {"category": "Splits & Files", "icon": "󰘦", "keys": "Ctrl + w > v", "description": "Split active pane vertically", "action": "notify:Helix:Vertical Split (Ctrl+w v)"},
+    {"category": "Splits & Files", "icon": "󰘦", "keys": "Ctrl + w > s", "description": "Split active pane horizontally", "action": "notify:Helix:Horizontal Split (Ctrl+w s)"},
+    {"category": "Splits & Files", "icon": "󰘦", "keys": "Ctrl + w > h/j/k/l", "description": "Move focus to adjacent split pane", "action": "notify:Helix:Move Split Focus (Ctrl+w h/j/k/l)"},
+    {"category": "Splits & Files", "icon": "󰘦", "keys": "Ctrl + w > q", "description": "Close active split pane", "action": "notify:Helix:Close Split (Ctrl+w q)"},
+    {"category": "Splits & Files", "icon": "󰘦", "keys": ":w / :q / :wq", "description": "Save / Quit / Save and Quit buffer", "action": "notify:Helix:Save & Quit (:w/:q)"},
+]
+
+YAZI_SHORTCUTS = [
+    # Navigation & Movement
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "h", "description": "Move to parent directory (back)", "action": "notify:Yazi:Parent Directory (h)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "l", "description": "Enter directory / open file", "action": "notify:Yazi:Enter/Open (l)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "j / k", "description": "Move selection down / up", "action": "notify:Yazi:Down/Up (j/k)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "Enter", "description": "Open file in default application", "action": "notify:Yazi:Open (Enter)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "g + g", "description": "Jump to first entry in directory", "action": "notify:Yazi:Jump to Top (g+g)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "G", "description": "Jump to last entry in directory", "action": "notify:Yazi:Jump to Bottom (G)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "Ctrl + u / Ctrl + d", "description": "Scroll preview half-page up / down", "action": "notify:Yazi:Half Page Scroll (Ctrl+u/d)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "Ctrl + b / Ctrl + f", "description": "Scroll preview full-page up / down", "action": "notify:Yazi:Full Page Scroll (Ctrl+b/f)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "~", "description": "Jump to user home directory (~)", "action": "notify:Yazi:Jump Home (~)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "g + c", "description": "Jump directly to ~/.config", "action": "notify:Yazi:Jump to Config (g+c)"},
+    {"category": "Navigation & Movement", "icon": "󰉋", "keys": "g + d", "description": "Jump directly to ~/Downloads", "action": "notify:Yazi:Jump to Downloads (g+d)"},
+    # Tabs & Workspaces
+    {"category": "Tabs & Workspaces", "icon": "󰉋", "keys": "t", "description": "Create new tab with current directory", "action": "notify:Yazi:New Tab (t)"},
+    {"category": "Tabs & Workspaces", "icon": "󰉋", "keys": "1 .. 9", "description": "Switch directly to tab 1..9", "action": "notify:Yazi:Switch Tab (1..9)"},
+    {"category": "Tabs & Workspaces", "icon": "󰉋", "keys": "[ / ]", "description": "Switch to previous / next tab", "action": "notify:Yazi:Prev/Next Tab ([ / ])"},
+    {"category": "Tabs & Workspaces", "icon": "󰉋", "keys": "w", "description": "Close active tab", "action": "notify:Yazi:Close Tab (w)"},
+    # File Operations
+    {"category": "File Operations", "icon": "󰉋", "keys": "Space", "description": "Toggle file selection and advance cursor", "action": "notify:Yazi:Select Toggle (Space)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "v", "description": "Enter visual range selection mode", "action": "notify:Yazi:Visual Select (v)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "V", "description": "Enter visual select-unset mode", "action": "notify:Yazi:Visual Unset (V)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "Ctrl + a", "description": "Select all files in directory", "action": "notify:Yazi:Select All (Ctrl+a)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "Ctrl + r", "description": "Invert file selection", "action": "notify:Yazi:Invert Selection (Ctrl+r)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "y", "description": "Yank (copy) selected files", "action": "notify:Yazi:Copy Files (y)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "x", "description": "Cut selected files", "action": "notify:Yazi:Cut Files (x)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "p", "description": "Paste copied / cut files here", "action": "notify:Yazi:Paste Files (p)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "d", "description": "Move selected files to Trash", "action": "notify:Yazi:Trash Files (d)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "D", "description": "Permanently delete selected files", "action": "notify:Yazi:Delete Files Permanently (D)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "a", "description": "Create new file or folder (end with / for folder)", "action": "notify:Yazi:Create File/Dir (a)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": "r", "description": "Rename selected file", "action": "notify:Yazi:Rename (r)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": ";", "description": "Run shell command on selected files", "action": "notify:Yazi:Shell Command (;)"},
+    {"category": "File Operations", "icon": "󰉋", "keys": ":", "description": "Execute blocking shell command", "action": "notify:Yazi:Blocking Shell (:)"},
+    # Search & Jump
+    {"category": "Search & Jump", "icon": "󰉋", "keys": "/", "description": "Fuzzy filter files in current folder", "action": "notify:Yazi:Filter Files (/)"},
+    {"category": "Search & Jump", "icon": "󰉋", "keys": "f", "description": "Hop / jump to matching file", "action": "notify:Yazi:Hop Find (f)"},
+    {"category": "Search & Jump", "icon": "󰉋", "keys": "z", "description": "Fast jump using Zoxide database", "action": "notify:Yazi:Zoxide Jump (z)"},
+    {"category": "Search & Jump", "icon": "󰉋", "keys": "Z", "description": "Interactive fuzzy jump with FZF", "action": "notify:Yazi:FZF Jump (Z)"},
+    {"category": "Search & Jump", "icon": "󰉋", "keys": "s", "description": "Search file contents with ripgrep (rg)", "action": "notify:Yazi:Content Search (s)"},
+    # Sorting & Display
+    {"category": "Sorting & Display", "icon": "󰉋", "keys": ".", "description": "Toggle hidden dotfiles visibility", "action": "notify:Yazi:Toggle Hidden (.)"},
+    {"category": "Sorting & Display", "icon": "󰉋", "keys": ", + m", "description": "Sort by modified time", "action": "notify:Yazi:Sort by Modified (,m)"},
+    {"category": "Sorting & Display", "icon": "󰉋", "keys": ", + s", "description": "Sort by file size", "action": "notify:Yazi:Sort by Size (,s)"},
+    {"category": "Sorting & Display", "icon": "󰉋", "keys": ", + a", "description": "Sort alphabetically by name", "action": "notify:Yazi:Sort by Name (,a)"},
+    {"category": "Sorting & Display", "icon": "󰉋", "keys": ", + e", "description": "Sort by file extension", "action": "notify:Yazi:Sort by Extension (,e)"},
+    {"category": "Sorting & Display", "icon": "󰉋", "keys": ", + r", "description": "Reverse sort order", "action": "notify:Yazi:Reverse Sort (,r)"},
+    {"category": "Sorting & Display", "icon": "󰉋", "keys": "F1 / ?", "description": "Show interactive Yazi keybindings & help", "action": "notify:Yazi:Help (F1 / ?)"},
+]
+
+NANO_SHORTCUTS = [
+    # File Management
+    {"category": "File Management", "icon": "󰈙", "keys": "Ctrl + O", "description": "WriteOut (Save active file to disk)", "action": "notify:Nano:WriteOut / Save (Ctrl+O)"},
+    {"category": "File Management", "icon": "󰈙", "keys": "Ctrl + X", "description": "Exit editor (prompts to save if modified)", "action": "notify:Nano:Exit (Ctrl+X)"},
+    {"category": "File Management", "icon": "󰈙", "keys": "Ctrl + R", "description": "Read file into current buffer", "action": "notify:Nano:Read File (Ctrl+R)"},
+    {"category": "File Management", "icon": "󰈙", "keys": "Alt + F", "description": "Toggle multiple file buffers", "action": "notify:Nano:Multiple Buffers (Alt+F)"},
+    {"category": "File Management", "icon": "󰈙", "keys": "Alt + < / >", "description": "Switch to previous / next file buffer", "action": "notify:Nano:Prev/Next Buffer (Alt+< / >)"},
+    # Editing & Cutbuffer
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Ctrl + K", "description": "Cut current line into cutbuffer", "action": "notify:Nano:Cut Line (Ctrl+K)"},
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Ctrl + U", "description": "Uncut (paste) cutbuffer at cursor position", "action": "notify:Nano:Paste / Uncut (Ctrl+U)"},
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Alt + 6  (Alt + ^)", "description": "Copy marked text or current line to cutbuffer", "action": "notify:Nano:Copy (Alt+6)"},
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Alt + A  (Ctrl + 6)", "description": "Set mark (begin text selection)", "action": "notify:Nano:Set Mark (Alt+A)"},
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Alt + U", "description": "Undo last action", "action": "notify:Nano:Undo (Alt+U)"},
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Alt + E", "description": "Redo last undone action", "action": "notify:Nano:Redo (Alt+E)"},
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Ctrl + J", "description": "Justify current paragraph", "action": "notify:Nano:Justify (Ctrl+J)"},
+    {"category": "Editing & Cutbuffer", "icon": "󰈙", "keys": "Alt + J", "description": "Justify entire buffer", "action": "notify:Nano:Justify Buffer (Alt+J)"},
+    # Search & Replace
+    {"category": "Search & Replace", "icon": "󰈙", "keys": "Ctrl + W", "description": "Where Is (search text forward)", "action": "notify:Nano:Where Is / Search (Ctrl+W)"},
+    {"category": "Search & Replace", "icon": "󰈙", "keys": "Alt + W", "description": "Repeat last search forward (Find next)", "action": "notify:Nano:Search Next (Alt+W)"},
+    {"category": "Search & Replace", "icon": "󰈙", "keys": "Ctrl + \\  (Alt + R)", "description": "Search and interactive replace", "action": "notify:Nano:Replace (Ctrl+\\)"},
+    {"category": "Search & Replace", "icon": "󰈙", "keys": "Alt + Q", "description": "Search backward", "action": "notify:Nano:Search Backward (Alt+Q)"},
+    # Navigation & Position
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Ctrl + A", "description": "Move cursor to beginning of line", "action": "notify:Nano:Start of Line (Ctrl+A)"},
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Ctrl + E", "description": "Move cursor to end of line", "action": "notify:Nano:End of Line (Ctrl+E)"},
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Ctrl + Y", "description": "Move up one page (PageUp)", "action": "notify:Nano:Page Up (Ctrl+Y)"},
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Ctrl + V", "description": "Move down one page (PageDown)", "action": "notify:Nano:Page Down (Ctrl+V)"},
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Alt + \\  (Alt + |)", "description": "Jump to first line of buffer", "action": "notify:Nano:First Line (Alt+\\)"},
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Alt + /  (Alt + ?)", "description": "Jump to last line of buffer", "action": "notify:Nano:Last Line (Alt+/)"},
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Ctrl + _  (Alt + G)", "description": "Go to specific line and column number", "action": "notify:Nano:Go to Line (Ctrl+_)"},
+    {"category": "Navigation & Position", "icon": "󰈙", "keys": "Ctrl + C", "description": "Report current cursor line, column, and position", "action": "notify:Nano:Position (Ctrl+C)"},
+    # Help & Display
+    {"category": "Help & Display", "icon": "󰈙", "keys": "Ctrl + G", "description": "Display interactive Help menu", "action": "notify:Nano:Help (Ctrl+G)"},
+    {"category": "Help & Display", "icon": "󰈙", "keys": "Alt + X", "description": "Toggle two-line help key menu at bottom", "action": "notify:Nano:Toggle Help Menu (Alt+X)"},
+    {"category": "Help & Display", "icon": "󰈙", "keys": "Alt + C", "description": "Toggle constant cursor position display", "action": "notify:Nano:Toggle Position Bar (Alt+C)"},
+    {"category": "Help & Display", "icon": "󰈙", "keys": "Alt + L", "description": "Toggle long line soft-wrapping", "action": "notify:Nano:Toggle Line Wrap (Alt+L)"},
+    {"category": "Help & Display", "icon": "󰈙", "keys": "Alt + N", "description": "Toggle line numbers display", "action": "notify:Nano:Toggle Line Numbers (Alt+N)"},
+]
+
+
+# ==============================================================================
+# 4. CONFIG LOCATIONS & SETTINGS GUIDE
+# ==============================================================================
+def format_file_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def get_environment_configs():
+    """Discover and return all configuration files across the entire desktop environment."""
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    xdg_config = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    home_dir = Path.home()
+
+    script_path = Path(__file__).resolve()
+    repo_dir = script_path.parent.parent if script_path.parent.name == "scripts" else script_path.parent
+
+    raw_entries = [
+        # Qtile Core Architecture
+        ("Qtile Core", "󰘳", "config.py", config_dir / "config.py", repo_dir / "config.py", "Primary Qtile entrypoint initializing layouts, widgets, screens, hooks, and keys"),
+        ("Qtile Core", "󰘳", "qtile_config/settings.py", config_dir / "qtile_config" / "settings.py", repo_dir / "qtile_config" / "settings.py", "Desktop preferences, gaps, borders, bar dimensions, and 4-layer unified PATH resolution"),
+        ("Qtile Core", "󰏘", "qtile_config/colors.py", config_dir / "qtile_config" / "colors.py", repo_dir / "qtile_config" / "colors.py", "Active Catppuccin / selected theme color palette loaded dynamically into Qtile"),
+        ("Qtile Core", "󰆍", "qtile_config/groups.py", config_dir / "qtile_config" / "groups.py", repo_dir / "qtile_config" / "groups.py", "Workspace tag definitions (1-9) & automated application class window routing rules"),
+        ("Qtile Core", "󰌌", "qtile_config/keys.py", config_dir / "qtile_config" / "keys.py", repo_dir / "qtile_config" / "keys.py", "Keyboard shortcuts, window state management (maximize, minimize, restore), media keys"),
+        ("Qtile Core", "󰕰", "qtile_config/layouts.py", config_dir / "qtile_config" / "layouts.py", repo_dir / "qtile_config" / "layouts.py", "Layout collection (Scroller, Columns, Monad, Tile, Matrix, Max, Floating) with borders"),
+        ("Qtile Core", "󰨘", "qtile_config/scroller.py", config_dir / "qtile_config" / "scroller.py", repo_dir / "qtile_config" / "scroller.py", "Niri-style smooth scroller horizontal ribbon layout engine with ease-out cubic animation"),
+        ("Qtile Core", "󰍹", "qtile_config/widgets.py", config_dir / "qtile_config" / "widgets.py", repo_dir / "qtile_config" / "widgets.py", "Top bar widgets, hardware monitoring capsules, separators, tooltips, and click actions"),
+        ("Qtile Core", "󰍹", "qtile_config/screens.py", config_dir / "qtile_config" / "screens.py", repo_dir / "qtile_config" / "screens.py", "Display screen outputs and top bar placement geometry"),
+
+        # Session Daemons & Core Launchers
+        ("Session & Launchers", "󰒓", "scripts/autostart", config_dir / "scripts" / "autostart", repo_dir / "scripts" / "autostart", "Session initialization script exporting unified PATH and launching background daemons"),
+        ("Session & Launchers", "󰌌", "scripts/qtile-action", config_dir / "scripts" / "qtile-action", repo_dir / "scripts" / "qtile-action", "Action dispatcher for launcher, run, volume, wifi, weather, restore, man, witr"),
+        ("Session & Launchers", "󰌌", "scripts/qtile-run", config_dir / "scripts" / "qtile-run", repo_dir / "scripts" / "qtile-run", "Smart runner executing CLI/TUI utilities in terminal and detaching GUI applications"),
+        ("Session & Launchers", "󰌌", "scripts/keybindings-cheatsheet", config_dir / "scripts" / "keybindings-cheatsheet", repo_dir / "scripts" / "keybindings-cheatsheet", "Tabbed shortcuts reference palette, cheatsheet, and config file browser"),
+        ("Session & Launchers", "󰏘", "scripts/apply-global-theme", config_dir / "scripts" / "apply-global-theme", repo_dir / "scripts" / "apply-global-theme", "Multi-app theme compiler synchronizing Qtile, Alacritty, Kitty, Micro, Dunst, and Rofi"),
+        ("Session & Launchers", "󰏘", "scripts/set-theme", config_dir / "scripts" / "set-theme", repo_dir / "scripts" / "set-theme", "Themed Rofi interactive global theme selector"),
+        ("Session & Launchers", "󰸉", "scripts/set-wallpaper", config_dir / "scripts" / "set-wallpaper", repo_dir / "scripts" / "set-wallpaper", "3x3 wallpaper thumbnail preview card grid and dynamic Nerd Font family switcher"),
+        ("Session & Launchers", "󰏘", "scripts/theme_apply.py", config_dir / "scripts" / "theme_apply.py", repo_dir / "scripts" / "theme_apply.py", "Python theme compiler generating application-specific theme configurations"),
+        ("Session & Launchers", "󰸉", "scripts/wal_to_qtile.py", config_dir / "scripts" / "wal_to_qtile.py", repo_dir / "scripts" / "wal_to_qtile.py", "Pywal / wallpaper image color palette extractor"),
+
+        # Widgets & Watchdogs
+        ("Widgets & Watchdogs", "󰕾", "scripts/volume-slider", config_dir / "scripts" / "volume-slider", repo_dir / "scripts" / "volume-slider", "Native floating volume slider popup with percentage presets and audio sink switching"),
+        ("Widgets & Watchdogs", "󰕾", "scripts/volume-status", config_dir / "scripts" / "volume-status", repo_dir / "scripts" / "volume-status", "Real-time audio volume level and mute status provider for the top bar"),
+        ("Widgets & Watchdogs", "󰖩", "scripts/wifi-menu", config_dir / "scripts" / "wifi-menu", repo_dir / "scripts" / "wifi-menu", "Deduplicated Wi-Fi scanner and interactive network connection picker"),
+        ("Widgets & Watchdogs", "󰖩", "scripts/wifi-status", config_dir / "scripts" / "wifi-status", repo_dir / "scripts" / "wifi-status", "Real-time network throughput (download/upload speed) monitor"),
+        ("Widgets & Watchdogs", "󰖐", "scripts/weather", config_dir / "scripts" / "weather", repo_dir / "scripts" / "weather", "Top bar weather widget script reporting current temperature"),
+        ("Widgets & Watchdogs", "󰖐", "scripts/weather-forecast", config_dir / "scripts" / "weather-forecast", repo_dir / "scripts" / "weather-forecast", "Hourly multi-column weather card grid dashboard"),
+        ("Widgets & Watchdogs", "󰖐", "scripts/set-weather-location", config_dir / "scripts" / "set-weather-location", repo_dir / "scripts" / "set-weather-location", "Weather forecast city and location configuration prompt"),
+        ("Widgets & Watchdogs", "󰁹", "scripts/battery-status", config_dir / "scripts" / "battery-status", repo_dir / "scripts" / "battery-status", "Battery health diagnostics and low-power warning notification daemon"),
+        ("Widgets & Watchdogs", "󰗠", "scripts/critical-indicators", config_dir / "scripts" / "critical-indicators", repo_dir / "scripts" / "critical-indicators", "Hardware watchdog alerting on critical CPU, RAM, disk, battery, or thermal limits"),
+        ("Widgets & Watchdogs", "󰒓", "scripts/sys-investigate", config_dir / "scripts" / "sys-investigate", repo_dir / "scripts" / "sys-investigate", "Deep system resource metrics, memory breakdown, and process causation inspector"),
+        ("Widgets & Watchdogs", "󰒋", "scripts/process-info", config_dir / "scripts" / "process-info", repo_dir / "scripts" / "process-info", "Interactive process manager and background daemon tracer"),
+        ("Widgets & Watchdogs", "󰒓", "scripts/services-info", config_dir / "scripts" / "services-info", repo_dir / "scripts" / "services-info", "Systemd user service monitor and interactive service manager"),
+        ("Widgets & Watchdogs", "󰟀", "scripts/cockpit-info", config_dir / "scripts" / "cockpit-info", repo_dir / "scripts" / "cockpit-info", "Cockpit Web Console status, browser launcher, and service control manager"),
+        ("Widgets & Watchdogs", "󰧑", "scripts/ai-agents-info", config_dir / "scripts" / "ai-agents-info", repo_dir / "scripts" / "ai-agents-info", "Active AI agent & LLM daemon process monitor, witr inspection, and management"),
+        ("Widgets & Watchdogs", "󰁯", "scripts/snapper-info", config_dir / "scripts" / "snapper-info", repo_dir / "scripts" / "snapper-info", "Snapper Btrfs snapshot monitor, manual snapshot creation, and immediate rollback menu"),
+
+        # Input & Security
+        ("Input & Security", "󰌌", "scripts/gesture-daemon", config_dir / "scripts" / "gesture-daemon", repo_dir / "scripts" / "gesture-daemon", "Native compiled C XInput 2.4 touchpad gesture daemon binary"),
+        ("Input & Security", "󰌌", "scripts/gesture-daemon.c", config_dir / "scripts" / "gesture-daemon.c", repo_dir / "scripts" / "gesture-daemon.c", "Zero-dependency C source code for root window touchpad gesture capture"),
+        ("Input & Security", "󰌌", "scripts/setup-gestures", config_dir / "scripts" / "setup-gestures", repo_dir / "scripts" / "setup-gestures", "Gesture daemon setup and management utility"),
+        ("Input & Security", "󰅍", "scripts/clipboard-history", config_dir / "scripts" / "clipboard-history", repo_dir / "scripts" / "clipboard-history", "Fuzzy clipboard history manager with Greenclip/xclip fallback"),
+        ("Input & Security", "󰈞", "scripts/rofi-file-search", config_dir / "scripts" / "rofi-file-search", repo_dir / "scripts" / "rofi-file-search", "Fast fuzzy file search backend for Rofi launcher tab using fd/fdfind"),
+        ("Input & Security", "󰈬", "scripts/rofi-content-search", config_dir / "scripts" / "rofi-content-search", repo_dir / "scripts" / "rofi-content-search", "Fast content search backend for Rofi launcher tab using ripgrep (rg)"),
+        ("Input & Security", "󰈙", "scripts/man-lookup", config_dir / "scripts" / "man-lookup", repo_dir / "scripts" / "man-lookup", "Fuzzy searchable manual page index and reader in Alacritty"),
+        ("Input & Security", "󰄄", "scripts/screenshot", config_dir / "scripts" / "screenshot", repo_dir / "scripts" / "screenshot", "Maim region and full screen screenshot utility with clipboard copying"),
+        ("Input & Security", "󰐥", "scripts/logout-menu", config_dir / "scripts" / "logout-menu", repo_dir / "scripts" / "logout-menu", "Themed power session menu (Lock, Logout, Reboot, Poweroff)"),
+        ("Input & Security", "󰗠", "scripts/check-config", config_dir / "scripts" / "check-config", repo_dir / "scripts" / "check-config", "Configuration syntax, typing, and dependency verification script"),
+
+        # Themes & Menus
+        ("Themes & Menus", "󰏘", "themes/current_theme.json", config_dir / "themes" / "current_theme.json", repo_dir / "themes" / "current_theme.json", "Active serialized color palette JSON applied across desktop tools"),
+        ("Themes & Menus", "󰏘", "themes/catppuccin-mocha.json", config_dir / "themes" / "catppuccin-mocha.json", repo_dir / "themes" / "catppuccin-mocha.json", "Catppuccin Mocha preset (default soothing dark pastel palette)"),
+        ("Themes & Menus", "󰏘", "themes/catppuccin-frappe.json", config_dir / "themes" / "catppuccin-frappe.json", repo_dir / "themes" / "catppuccin-frappe.json", "Catppuccin Frappé preset palette"),
+        ("Themes & Menus", "󰏘", "themes/catppuccin-latte.json", config_dir / "themes" / "catppuccin-latte.json", repo_dir / "themes" / "catppuccin-latte.json", "Catppuccin Latte preset light palette"),
+        ("Themes & Menus", "󰏘", "themes/gruvbox-dark.json", config_dir / "themes" / "gruvbox-dark.json", repo_dir / "themes" / "gruvbox-dark.json", "Gruvbox Dark warm retro groove palette"),
+        ("Themes & Menus", "󰏘", "themes/github-dark.json", config_dir / "themes" / "github-dark.json", repo_dir / "themes" / "github-dark.json", "GitHub Dark canvas palette"),
+        ("Themes & Menus", "󰏘", "themes/ayu-dark.json", config_dir / "themes" / "ayu-dark.json", repo_dir / "themes" / "ayu-dark.json", "Ayu Dark high-contrast editor palette"),
+        ("Themes & Menus", "󰏘", "themes/solarized-dark.json", config_dir / "themes" / "solarized-dark.json", repo_dir / "themes" / "solarized-dark.json", "Solarized Dark cyan/base03 terminal palette"),
+        ("Themes & Menus", "󰏘", "themes/catppuccin-mocha.rasi", config_dir / "themes" / "catppuccin-mocha.rasi", repo_dir / "themes" / "catppuccin-mocha.rasi", "Primary Rofi menu styling theme"),
+        ("Themes & Menus", "󰸉", "themes/catppuccin-mocha-grid.rasi", config_dir / "themes" / "catppuccin-mocha-grid.rasi", repo_dir / "themes" / "catppuccin-mocha-grid.rasi", "Rofi 3x3 thumbnail card grid theme for wallpapers"),
+        ("Themes & Menus", "󰖐", "themes/catppuccin-mocha-weather.rasi", config_dir / "themes" / "catppuccin-mocha-weather.rasi", repo_dir / "themes" / "catppuccin-mocha-weather.rasi", "Rofi multi-column hourly weather card dashboard theme"),
+        ("Themes & Menus", "󰖐", "weather-location", config_dir / "weather-location", repo_dir / "weather-location", "Saved weather forecast city file"),
+        ("Themes & Menus", "󰸉", "Pictures/Wallpapers", home_dir / "Pictures" / "Wallpapers", repo_dir / "wallpapers", "Desktop wallpapers collection directory"),
+
+        # External Integration
+        ("External Integration", "󰆍", "alacritty/alacritty.toml", xdg_config / "alacritty" / "alacritty.toml", repo_dir / "alacritty" / "alacritty.toml", "Primary GPU terminal emulator configuration"),
+        ("External Integration", "󰏘", "alacritty/catppuccin-mocha.toml", xdg_config / "alacritty" / "qtile-con-catppuccin-mocha.toml", repo_dir / "alacritty" / "catppuccin-mocha.toml", "Alacritty dynamic imported theme palette"),
+        ("External Integration", "󰆍", "kitty/kitty.conf", xdg_config / "kitty" / "kitty.conf", repo_dir / "kitty" / "kitty.conf", "Secondary terminal emulator configuration"),
+        ("External Integration", "󰏘", "kitty/qtile-theme.conf", xdg_config / "kitty" / "qtile-theme.conf", repo_dir / "kitty" / "qtile-theme.conf", "Kitty dynamic imported theme palette"),
+        ("External Integration", "󰒓", "dunst/dunstrc", xdg_config / "dunst" / "dunstrc", repo_dir / "dunst" / "dunstrc", "Dunst desktop notification daemon styling and configuration"),
+        ("External Integration", "󰏘", "micro/qtile-theme.micro", xdg_config / "micro" / "colorschemes" / "qtile-theme.micro", repo_dir / "micro" / "qtile-theme.micro", "Micro terminal text editor synchronized color scheme"),
+        ("External Integration", "󰘦", "helix/config.toml", xdg_config / "helix" / "config.toml", repo_dir / "helix" / "config.toml", "Helix modern modal text editor configuration"),
+        ("External Integration", "󰌌", "libinput-gestures.conf", xdg_config / "libinput-gestures.conf", repo_dir / "gestures" / "libinput-gestures.conf", "Fallback touchpad gesture configuration"),
+        ("External Integration", "󰌌", "qtile.desktop", Path("/usr/share/xsessions/qtile.desktop"), repo_dir / "qtile.desktop", "X11 display manager desktop session entry"),
+        ("External Integration", "󰒓", "install-manifest.json", home_dir / ".local" / "share" / "qtile-con" / "install-manifest.json", repo_dir / ".install-manifest.json", "Automated installer package tracking manifest"),
+        ("External Integration", "󰒋", "witr", home_dir / ".local" / "bin" / "witr", repo_dir / "bin" / "witr", "Process causation tree tracer binary"),
+        ("External Integration", "󰆍", ".bashrc", home_dir / ".bashrc", home_dir / ".bashrc", "Interactive user Bash shell configuration and unified PATH export"),
+        ("External Integration", "󰆍", ".profile", home_dir / ".profile", home_dir / ".profile", "User login session environment profile and PATH configuration"),
+        ("External Integration", "󰈙", "SETTINGS_GUIDE.md", config_dir / "SETTINGS_GUIDE.md", repo_dir / "docs" / "SETTINGS_GUIDE.md", "Comprehensive systems architecture, customization, and settings guide"),
+        ("Input & Security", "󰌌", "udev/90-backlight.rules", Path("/etc/udev/rules.d/90-backlight.rules"), repo_dir / "udev" / "90-backlight.rules", "Udev rules granting video/input groups passwordless backlight control"),
+        ("External Integration", "󰒋", "yazi/yazi.toml", home_dir / ".config/yazi/yazi.toml", home_dir / ".config/yazi/yazi.toml", "Yazi asynchronous terminal file manager configuration"),
+        ("External Integration", "󰏘", "yazi/theme.toml", home_dir / ".config/yazi/theme.toml", home_dir / ".config/yazi/theme.toml", "Yazi theme flavor selector configuration"),
+        ("External Integration", "󰉋", "gtk-3.0/settings.ini", home_dir / ".config/gtk-3.0/settings.ini", home_dir / ".config/gtk-3.0/settings.ini", "GTK3 and Thunar widget/icon theme settings (Tela icon theme)"),
+    ]
+
+    configs = []
+    for category, icon, name, active_path, source_path, description in raw_entries:
+        target_path = active_path if active_path.exists() else source_path
+        exists = active_path.exists() or source_path.exists()
+        is_dir = target_path.is_dir() if exists else False
+        is_exec = os.access(target_path, os.X_OK) if exists and not is_dir else False
+
+        size_bytes = 0
+        mtime_str = None
+        if exists:
+            try:
+                st = target_path.stat()
+                size_bytes = st.st_size
+                mtime_str = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                pass
+
+        if active_path.is_dir():
+            status = "Directory"
+        elif active_path.is_file():
+            status = "Active"
+        elif source_path.exists():
+            status = "In Repo"
+        else:
+            status = "Not Found"
+
+        display_path = str(active_path).replace(str(home_dir), "~")
+        source_display = str(source_path).replace(str(home_dir), "~")
+
+        configs.append({
+            "category": category,
+            "icon": icon,
+            "name": name,
+            "description": description,
+            "active_path": str(active_path),
+            "display_path": display_path,
+            "source_path": str(source_path),
+            "source_display": source_display,
+            "target_path": str(target_path),
+            "exists": exists,
+            "status": status,
+            "size_bytes": size_bytes,
+            "size_formatted": format_file_size(size_bytes) if exists else "0 B",
+            "last_modified": mtime_str,
+            "is_dir": is_dir,
+            "is_executable": is_exec,
+        })
+
+    return configs
+
+
+def get_guide_sections():
+    """Structured sections from SETTINGS_GUIDE.md."""
+    return [
+        {"icon": "󰍹", "title": "1. System Architecture & Modular Layout", "description": "Modular Python Qtile configuration, config.py hooks, layouts, and bar widgets"},
+        {"icon": "󰏘", "title": "2. Color Theme Customization & Multi-App Sync", "description": "Adding new themes, JSON palette schema, Alacritty, Kitty, Micro, and Rofi live sync"},
+        {"icon": "󰌌", "title": "3. Hardware Controls & Mac Ergonomics", "description": "Mac screenshots (Cmd+Shift+3/4), brightnessctl, video/input udev rules, backlight setup"},
+        {"icon": "󰒓", "title": "4. PolicyKit Management & Root GUI Authentication", "description": "Graphical root elevation (lxpolkit), auto-centering floating rules for auth prompts"},
+        {"icon": "󰒋", "title": "5. Qtile Bar Widget Interactions & Memory Lock", "description": "Process watchdog (SIGTERM kill), window title expander, <800MB RAM idle lock"},
+        {"icon": "󰉋", "title": "6. File Management Integration (Thunar & Yazi)", "description": "Thunar plugins, Tela icon themes, and Yazi fast asynchronous terminal file manager"},
+        {"icon": "󰈙", "title": "7. Interactive Reference & Cheatsheet Architecture", "description": "Tabbed cheatsheet launcher, Rofi modes, and config file inspection"},
+        {"icon": "󰕰", "title": "8. Independent Workspace Layouts (Zero-Leakage)", "description": "Per-workspace persistent layout memory, zero-leakage switching, cache engine"},
+        {"icon": "󰠬", "title": "9. SysAdmin Widget Group & Immediate Rollback", "description": "Expandable bar capsule, Cockpit console, AI Agents monitor, and Snapper Btrfs rollback"},
+        {"icon": "󰈙", "title": "10. Open Full SETTINGS_GUIDE.md Document", "description": "Launch the comprehensive systems architecture guide in terminal editor"},
+    ]
+
+
+# ==============================================================================
+# 5. TAB REGISTRY & CONFIGURATION
+# ==============================================================================
+TABS = [
+    ("qtile", "Qtile", "󰌌", "Qtile & Gestures", "Dynamic keyboard shortcuts, window controls & touchpad gestures"),
+    ("config", "Config", "󰒓", "Environment Configs", "Catalog of 60+ config files, paths, statuses, and locations"),
+    ("guide", "Guide", "󰈙", "Settings Guide", "Systems architecture, modular layouts, and settings guide"),
+    ("kitty", "Kitty", "󰆍", "Kitty Terminal", "GPU-accelerated terminal emulator keybindings and kittens"),
+    ("micro", "Micro", "󰅩", "Micro Editor", "Modern terminal text editor keybindings and multi-cursor"),
+    ("helix", "Helix", "󰘦", "Helix Editor", "Modal text editor keybindings and Kakoune selection model"),
+    ("yazi", "Yazi", "󰉋", "Yazi File Manager", "Asynchronous terminal file manager shortcuts and search"),
+    ("nano", "Nano", "󰈙", "GNU Nano", "Standard terminal text editor keybindings and cutbuffer"),
+]
+
+TAB_LOOKUP = {t[0]: t for t in TABS}
+
+
+def get_tab_header_lines(current_mode):
+    """Generate quick tab-switcher header lines for inside menus."""
+    lines = []
+    # Compact tab bar overview
+    tab_chips = []
+    for mode_id, name, icon, _, _ in TABS:
+        if mode_id == current_mode:
+            tab_chips.append(f"[{icon} {name} (active)]")
+        else:
+            tab_chips.append(f"{icon} {name}")
+    lines.append("󰌌  TAB BAR: " + "  │  ".join(tab_chips))
+
+    # Actionable switchers to other tabs
+    for mode_id, name, icon, label, desc in TABS:
+        if mode_id != current_mode:
+            lines.append(f"{icon}  [SWITCH TO TAB: {name}]  ──► {label} ({desc})")
+    lines.append("────────────────────────────────────────────────────────────────────────────────────────")
+    return lines
+
+
+# ==============================================================================
+# 6. FORMATTING HELPERS FOR ROFI
+# ==============================================================================
+def format_keybinding_lines(items, current_mode="qtile"):
+    """Format shortcut items into aligned dmenu options."""
+    lines = get_tab_header_lines(current_mode)
+    if not items:
+        lines.append("󰅖  No keybindings available in this catalog.")
+        return lines
+
+    max_key_len = max(len(item["keys"]) for item in items)
+    for item in items:
+        icon = item.get("icon", "󰌌")
+        keys = item["keys"].ljust(max_key_len)
+        desc = item["description"]
+        cat = item["category"]
+        lines.append(f"{icon}  {keys}  │  {desc}  [{cat}]")
+    return lines
+
+
+def format_config_lines(configs, current_mode="config"):
+    """Format configuration files into aligned dmenu options."""
+    lines = get_tab_header_lines(current_mode)
+    max_name_len = min(32, max(len(c["name"]) for c in configs))
+    max_cat_len = min(20, max(len(c["category"]) for c in configs))
+    for c in configs:
+        icon = c["icon"]
+        cat = f"[{c['category']}]".ljust(max_cat_len + 2)
+        name = c["name"].ljust(max_name_len)
+        disp = c["display_path"]
+        status = c["status"]
+        size = c["size_formatted"]
+        desc = c["description"]
+        lines.append(f"{icon}  {cat}  {name}  │  {disp}  [{status} • {size}]  │  {desc}")
+    return lines
+
+
+def format_guide_lines(current_mode="guide"):
+    """Format structured settings guide sections into aligned dmenu options."""
+    lines = get_tab_header_lines(current_mode)
+    sections = get_guide_sections()
+    for s in sections:
+        lines.append(f"{s['icon']}  {s['title']:<48}  │  {s['description']}")
+    return lines
+
+
+# ==============================================================================
+# 7. ACTION DISPATCHERS & CLIPBOARD
+# ==============================================================================
+def copy_to_clipboard(text: str):
+    """Copy text string to X11 clipboard via xclip or xsel."""
+    if not os.environ.get("DISPLAY"):
+        return
+    try:
+        if shutil.which("xclip"):
+            proc = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                proc.communicate(input=text.encode("utf-8"), timeout=0.5)
+            except (subprocess.TimeoutExpired, Exception):
+                proc.kill()
+        elif shutil.which("xsel"):
+            proc = subprocess.Popen(["xsel", "--clipboard", "--input"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                proc.communicate(input=text.encode("utf-8"), timeout=0.5)
+            except (subprocess.TimeoutExpired, Exception):
+                proc.kill()
+    except Exception:
+        pass
+
+
+def notify_user(title: str, body: str, urgency: str = "low"):
+    """Send desktop notification via dunstify or notify-send."""
+    if not os.environ.get("DISPLAY"):
+        return
+    try:
+        if shutil.which("dunstify"):
+            subprocess.run(["dunstify", "-a", "Cheatsheet", "-u", urgency, title, body], timeout=1.0, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif shutil.which("notify-send"):
+            subprocess.run(["notify-send", "-a", "Cheatsheet", "-u", urgency, title, body], timeout=1.0, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def open_config_path(config_item):
+    """Open the selected configuration file in terminal editor or file manager."""
+    target_path = Path(config_item["target_path"])
+    display_path = config_item["display_path"]
+
+    if not config_item["exists"]:
+        notify_user("File Not Found", f"{display_path} does not exist yet.", urgency="normal")
+        return
+
+    term = os.environ.get("QTILE_TERMINAL", "alacritty")
+    term_bin = shutil.which(term) or shutil.which("alacritty") or "/usr/bin/alacritty"
+
+    if config_item["is_dir"]:
+        if shutil.which("xdg-open"):
+            subprocess.Popen(["xdg-open", str(target_path)], start_new_session=True)
+        else:
+            subprocess.Popen([term_bin, "--working-directory", str(target_path)], start_new_session=True)
+    else:
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "micro"
+        editor_bin = shutil.which(editor) or shutil.which("micro") or shutil.which("nano") or "/usr/bin/micro"
+        subprocess.Popen([term_bin, "-e", editor_bin, str(target_path)], start_new_session=True)
+
+    notify_user("Opened Configuration", f"{config_item['name']}\n{display_path}")
+
+
+def open_guide():
+    """Open SETTINGS_GUIDE.md in user's terminal text editor."""
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    guide_file = config_dir / "SETTINGS_GUIDE.md"
+    if not guide_file.is_file():
+        guide_file = Path(__file__).resolve().parent.parent / "docs" / "SETTINGS_GUIDE.md"
+
+    term = os.environ.get("QTILE_TERMINAL", "alacritty")
+    term_bin = shutil.which(term) or shutil.which("alacritty") or "/usr/bin/alacritty"
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "micro"
+    editor_bin = shutil.which(editor) or shutil.which("micro") or shutil.which("nano") or "/usr/bin/micro"
+    subprocess.Popen([term_bin, "-e", editor_bin, str(guide_file)], start_new_session=True)
+
+
+def execute_action(action: str, keys: str = "", desc: str = "", app_name: str = "Qtile"):
+    """Execute shortcut action, copy keys to clipboard, or send notification."""
+    if not action:
+        if keys:
+            copy_to_clipboard(keys)
+            notify_user(f"{app_name} Shortcut Copied", f"{keys}\n{desc}")
+        return
+
+    if action.startswith("notify:"):
+        parts = action[len("notify:"):].split(":", 1)
+        title = parts[0].strip() if len(parts) > 1 else f"{app_name} Reference"
+        body = parts[1].strip() if len(parts) > 1 else parts[0].strip()
+        if keys:
+            copy_to_clipboard(keys)
+            body = f"{body}\n({keys} copied to clipboard)"
+        notify_user(title, body)
+        return
+
+    # If keys provided and not starting with qtile cmd, copy to clipboard as convenience
+    if keys:
+        copy_to_clipboard(keys)
+
+    # Execute system command or script
+    try:
+        subprocess.Popen(action, shell=True, start_new_session=True)
+    except Exception as e:
+        sys.stderr.write(f"Failed to execute action {action}: {e}\n")
+
+
+# ==============================================================================
+# 8. TABBED LAUNCHER CONTROLLER (ROFI NATIVE MODI & DMENU FALLBACK)
+# ==============================================================================
+def get_items_for_mode(mode: str):
+    """Retrieve catalog list corresponding to the requested tab/mode."""
+    mode = mode.lower()
+    if mode in ("qtile", "keys", "shortcuts", "gestures"):
+        return get_qtile_keybindings()
+    elif mode in ("config", "configs", "locations"):
+        return get_environment_configs()
+    elif mode in ("guide", "settings"):
+        return get_guide_sections()
+    elif mode == "kitty":
+        return KITTY_SHORTCUTS
+    elif mode == "micro":
+        return MICRO_SHORTCUTS
+    elif mode == "helix" or mode == "hx":
+        return HELIX_SHORTCUTS
+    elif mode == "yazi":
+        return YAZI_SHORTCUTS
+    elif mode == "nano":
+        return NANO_SHORTCUTS
+    return get_qtile_keybindings()
+
+
+def print_mode_entries(mode: str):
+    """Emit Rofi script mode prompt, metadata, and rows for the given tab."""
+    prompt = TAB_LOOKUP.get(mode, ("", "", "", mode.title()))[3]
+    print(f"\0prompt\x1f{prompt}")
+    print(f"\0data\x1f{mode}")
+
+    if mode in ("config", "configs"):
+        configs = get_environment_configs()
+        for line in format_config_lines(configs, current_mode="config"):
+            print(line)
+    elif mode in ("guide", "settings"):
+        for line in format_guide_lines(current_mode="guide"):
+            print(line)
+    else:
+        items = get_items_for_mode(mode)
+        for line in format_keybinding_lines(items, current_mode=mode):
+            print(line)
+
+
+def handle_selection(mode: str, selected: str):
+    """Handle user item selection across all modes."""
+    selected = (selected or "").strip()
+    if not selected or selected.startswith("󰅖") or "TAB BAR:" in selected or "───────" in selected:
+        return
+
+    # Check for tab switcher request (used when invoked via dmenu fallback)
+    m = re.search(r"\[SWITCH TO TAB:\s*([^\]]+)\]", selected, re.IGNORECASE)
+    if m:
+        target_name = m.group(1).strip().lower()
+        target_mode = "qtile"
+        for t_id, t_name, _, _, _ in TABS:
+            if target_name in t_id.lower() or target_name in t_name.lower():
+                target_mode = t_id
+                break
+        show_dmenu_menu(mode=target_mode)
+        return
+
+    if mode in ("config", "configs"):
+        configs = get_environment_configs()
+        for c in configs:
+            if c["name"] in selected and c["display_path"] in selected:
+                open_config_path(c)
+                return
+        for c in configs:
+            if c["display_path"] in selected or c["name"] in selected:
+                open_config_path(c)
+                return
+        return
+
+    if mode in ("guide", "settings"):
+        open_guide()
+        return
+
+    # Matching in shortcut catalogs
+    items = get_items_for_mode(mode)
+    app_label = TAB_LOOKUP.get(mode, ("", "Cheatsheet"))[1]
+
+    for item in items:
+        if item["keys"] in selected and item["category"] in selected:
+            execute_action(item.get("action", ""), keys=item["keys"], desc=item["description"], app_name=app_label)
+            return
+
+    for item in items:
+        if item["keys"] in selected:
+            execute_action(item.get("action", ""), keys=item["keys"], desc=item["description"], app_name=app_label)
+            return
+
+    # Fallback search across all tool catalogs if not matched in active mode
+    for t_id, t_name, _, _, _ in TABS:
+        if t_id not in ("config", "guide"):
+            for item in get_items_for_mode(t_id):
+                if item["keys"] in selected:
+                    execute_action(item.get("action", ""), keys=item["keys"], desc=item["description"], app_name=t_name)
+                    return
+
+
+def rofi_modi_entrypoint(mode: str, selection: str = None):
+    """Entrypoint called by Rofi when running in custom script mode."""
+    retv = os.environ.get("ROFI_RETV", "0")
+    active_mode = os.environ.get("ROFI_DATA") or mode
+
+    sel = selection if selection is not None else (sys.argv[3] if len(sys.argv) > 3 else None)
+
+    # If called with selection (user clicked or pressed Enter)
+    if retv == "1" or sel:
+        sel_str = (sel or "").strip()
+
+        # 1. Did the user select a tab switcher?
+        m = re.search(r"\[SWITCH TO TAB:\s*([^\]]+)\]", sel_str, re.IGNORECASE)
+        if m:
+            target_name = m.group(1).strip().lower()
+            target_mode = "qtile"
+            for t_id, t_name, _, _, _ in TABS:
+                if target_name in t_id.lower() or target_name in t_name.lower():
+                    target_mode = t_id
+                    break
+            # Emit new tab entries on stdout so Rofi updates in-place and stays open!
+            print_mode_entries(target_mode)
+            sys.exit(0)
+
+        # 2. Did the user click on a non-actionable header or separator?
+        if not sel_str or "TAB BAR:" in sel_str or "───────" in sel_str or sel_str.startswith("󰅖"):
+            print_mode_entries(active_mode)
+            sys.exit(0)
+
+        # 3. Actionable selection: perform action and exit with no output (closes Rofi)
+        handle_selection(active_mode, sel_str)
+        sys.exit(0)
+
+    # Initial list generation (no selection)
+    print_mode_entries(active_mode)
+
+
+def launch_tabbed_rofi(initial_mode: str = "qtile"):
+    """Launch Rofi with 8 native sidebar tab buttons using custom script modes."""
+    theme = get_theme_path()
+    self_path = str(Path(__file__).resolve())
+
+    # Ensure initial mode is valid
+    if initial_mode not in TAB_LOOKUP:
+        # Match by prefix/alias
+        for t_id in TAB_LOOKUP:
+            if initial_mode.lower() in t_id:
+                initial_mode = t_id
+                break
+        else:
+            initial_mode = "qtile"
+
+    initial_tab_name = TAB_LOOKUP[initial_mode][1]
+
+    modes_arg = ",".join(f"{label}:{self_path} --rofi-modi {m_id}" for m_id, label, _, _, _ in TABS)
+
+    rofi_cmd = [
+        "rofi",
+        "-show", initial_tab_name,
+        "-modes", modes_arg,
+        "-sidebar-mode",
+        "-theme", theme,
+        "-theme-str", "window { width: 75%; } listview { lines: 15; }",
+    ]
+
+    try:
+        proc = subprocess.run(rofi_cmd)
+        if proc.returncode != 0 and proc.returncode != 1:
+            # Fallback to dmenu if script modes failed
+            show_dmenu_menu(mode=initial_mode)
+    except Exception as e:
+        sys.stderr.write(f"Rofi tabbed modes error: {e}. Falling back to dmenu...\n")
+        show_dmenu_menu(mode=initial_mode)
+
+
+def show_dmenu_menu(mode: str = "qtile"):
+    """Fallback interactive dmenu runner with tab switcher headers."""
+    theme = get_theme_path()
+
+    if mode in ("config", "configs"):
+        configs = get_environment_configs()
+        lines = format_config_lines(configs, current_mode="config")
+        prompt = "Config Locations > "
+    elif mode in ("guide", "settings"):
+        lines = format_guide_lines(current_mode="guide")
+        prompt = "Settings Guide > "
+    else:
+        items = get_items_for_mode(mode)
+        prompt = f"{TAB_LOOKUP.get(mode, ('', mode.title()))[1]} Keys > "
+        lines = format_keybinding_lines(items, current_mode=mode)
+
+    rofi_cmd = [
+        "rofi", "-dmenu", "-i",
+        "-p", prompt,
+        "-theme", theme,
+        "-theme-str", "window { width: 75%; } listview { lines: 15; }",
+    ]
+
+    try:
+        proc = subprocess.Popen(
+            rofi_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        selected, _ = proc.communicate(input="\n".join(lines))
+        handle_selection(mode, (selected or "").strip())
+    except Exception as e:
+        sys.stderr.write(f"Error launching Rofi dmenu: {e}\n")
+
+
+# ==============================================================================
+# 9. MARKDOWN DOCUMENTATION GENERATOR
+# ==============================================================================
+def generate_markdown():
+    """Generate comprehensive Markdown documentation covering all 8 tabs."""
+    md = [
+        "# Qtile-Con Keyboard Shortcuts & Gestures Cheatsheet",
+        "",
+        "## Unified Tabbed Developer Tools & Keybindings Reference Palette",
+        "",
+        "Quickly access this interactive tabbed reference palette anywhere on your desktop by pressing:",
+        "",
+        "> `Super + /`  or  `Super + ?`  or  `Super + s`",
+        "",
+        "To jump directly to any specific tool tab:",
+        "",
+        "- **Qtile & Gestures:** `Super + /` or `keybindings-cheatsheet qtile`",
+        "- **Config Locations:** `Super + Ctrl + /` or `keybindings-cheatsheet config`",
+        "- **Settings Guide:** `keybindings-cheatsheet guide`",
+        "- **Kitty Terminal:** `keybindings-cheatsheet kitty`",
+        "- **Micro Editor:** `keybindings-cheatsheet micro`",
+        "- **Helix Modal Editor:** `keybindings-cheatsheet helix`",
+        "- **Yazi File Manager:** `keybindings-cheatsheet yazi`",
+        "- **GNU Nano Editor:** `keybindings-cheatsheet nano`",
+        "",
+        "---",
+        "",
+    ]
+
+    # Tab 1: Qtile & Gestures
+    md.append("# 1. Qtile Window Manager & Gestures")
+    md.append("")
+    qtile_items = get_qtile_keybindings()
+    cats = {}
+    for item in qtile_items:
+        c = item["category"]
+        cats.setdefault(c, []).append(item)
+
+    for cat_name, items in cats.items():
+        md.append(f"## {cat_name}")
+        md.append("")
+        md.append("| Key / Gesture | Description | Action |")
+        md.append("| :--- | :--- | :--- |")
+        home_str = str(Path.home())
+        for it in items:
+            raw_act = it['action']
+            clean_act = raw_act.replace(home_str, "~")
+            act = f"`{clean_act}`" if not raw_act.startswith("notify:") else "Desktop Notification"
+            md.append(f"| `{it['keys']}` | {it['description']} | {act} |")
+        md.append("")
+
+    # Developer Tools
+    tool_catalogs = [
+        ("2. Kitty Terminal Emulator", KITTY_SHORTCUTS),
+        ("3. Micro Terminal Text Editor", MICRO_SHORTCUTS),
+        ("4. Helix Modern Modal Editor", HELIX_SHORTCUTS),
+        ("5. Yazi Asynchronous File Manager", YAZI_SHORTCUTS),
+        ("6. GNU Nano Terminal Editor", NANO_SHORTCUTS),
+    ]
+
+    for tool_title, tool_items in tool_catalogs:
+        md.append("---")
+        md.append("")
+        md.append(f"# {tool_title}")
+        md.append("")
+        t_cats = {}
+        for it in tool_items:
+            t_cats.setdefault(it["category"], []).append(it)
+        for cat_name, items in t_cats.items():
+            md.append(f"## {cat_name}")
+            md.append("")
+            md.append("| Key Combination | Description |")
+            md.append("| :--- | :--- |")
+            for it in items:
+                md.append(f"| `{it['keys']}` | {it['description']} |")
+            md.append("")
+
+    # Config Locations
+    md.append("---")
+    md.append("")
+    md.append("# 7. Environment Configuration Locations Catalog")
+    md.append("")
+    configs = get_environment_configs()
+    cfg_cats = {}
+    for c in configs:
+        cfg_cats.setdefault(c["category"], []).append(c)
+
+    for cat_name, items in cfg_cats.items():
+        md.append(f"## {cat_name}")
+        md.append("")
+        md.append("| File / Target | Active Location | Source / Fallback | Status | Size | Purpose & Description |")
+        md.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
+        for c in items:
+            md.append(f"| `{c['name']}` | `{c['display_path']}` | `{c['source_display']}` | {c['status']} | {c['size_formatted']} | {c['description']} |")
+        md.append("")
+
+    return "\n".join(md)
+
+
+# ==============================================================================
+# 10. CLI ARGUMENTS & DISPATCHER
+# ==============================================================================
+def main():
+    # Check for internal Rofi script mode invocation
+    if len(sys.argv) > 1 and sys.argv[1] == "--rofi-modi":
+        mode = sys.argv[2] if len(sys.argv) > 2 else "qtile"
+        selection = sys.argv[3] if len(sys.argv) > 3 else None
+        rofi_modi_entrypoint(mode, selection)
+        return
+
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].lower()
+
+        # Non-interactive JSON exports
+        if arg in ("--json", "-j"):
+            submode = sys.argv[2].lower() if len(sys.argv) > 2 else "qtile"
+            if submode in ("all", "--all"):
+                payload = {
+                    "qtile": get_qtile_keybindings(),
+                    "config": get_environment_configs(),
+                    "guide": get_guide_sections(),
+                    "kitty": KITTY_SHORTCUTS,
+                    "micro": MICRO_SHORTCUTS,
+                    "helix": HELIX_SHORTCUTS,
+                    "yazi": YAZI_SHORTCUTS,
+                    "nano": NANO_SHORTCUTS,
+                }
+                print(json.dumps(payload, indent=2))
+            else:
+                items = get_items_for_mode(submode)
+                print(json.dumps(items, indent=2))
+            return
+
+        elif arg in ("--json-configs", "--json=configs", "-jc"):
+            print(json.dumps(get_environment_configs(), indent=2))
+            return
+
+        elif arg in ("--json-all", "--json=all"):
+            payload = {
+                "keybindings": get_qtile_keybindings(),
+                "config_locations": get_environment_configs(),
+                "kitty": KITTY_SHORTCUTS,
+                "micro": MICRO_SHORTCUTS,
+                "helix": HELIX_SHORTCUTS,
+                "yazi": YAZI_SHORTCUTS,
+                "nano": NANO_SHORTCUTS,
+            }
+            print(json.dumps(payload, indent=2))
+            return
+
+        elif arg in ("--markdown", "-md", "--doc"):
+            print(generate_markdown())
+            return
+
+        elif arg.startswith("--dmenu"):
+            mode = sys.argv[2].lower() if len(sys.argv) > 2 else "qtile"
+            show_dmenu_menu(mode=mode)
+            return
+
+        elif arg in ("--help", "-h"):
+            print("Usage: keybindings-cheatsheet [TAB] [OPTIONS]")
+            print("\nInteractive Tabbed Modes:")
+            print("  keybindings-cheatsheet             Open tabbed launcher (Qtile & Gestures tab default)")
+            print("  keybindings-cheatsheet qtile       Open directly to Qtile Keybindings & Gestures")
+            print("  keybindings-cheatsheet config      Open directly to Environment Configuration Files")
+            print("  keybindings-cheatsheet guide       Open directly to Systems Architecture & Settings Guide")
+            print("  keybindings-cheatsheet kitty       Open directly to Kitty Terminal Keybindings")
+            print("  keybindings-cheatsheet micro       Open directly to Micro Text Editor Keybindings")
+            print("  keybindings-cheatsheet helix       Open directly to Helix Modal Editor Keybindings")
+            print("  keybindings-cheatsheet yazi        Open directly to Yazi Terminal File Manager Keybindings")
+            print("  keybindings-cheatsheet nano        Open directly to GNU Nano Editor Keybindings")
+            print("\nNon-Interactive Export Flags:")
+            print("  --json [tab|all]                   Export keybindings catalog as JSON (default: qtile)")
+            print("  --json-configs                     Export environment config locations catalog as JSON")
+            print("  --json-all                         Export all tabs and catalogs as unified JSON")
+            print("  --markdown                         Generate full Markdown documentation for all 8 tabs")
+            print("  --dmenu [tab]                      Run using standalone dmenu instead of tabbed modes")
+            print("  --help, -h                         Show this help message")
+            return
+
+        # Direct tab launch
+        matched_mode = None
+        for t_id in TAB_LOOKUP:
+            if arg in (t_id, f"--{t_id}", f"--tab={t_id}"):
+                matched_mode = t_id
+                break
+        if not matched_mode:
+            # Check aliases
+            if arg in ("shortcuts", "keys", "gestures"):
+                matched_mode = "qtile"
+            elif arg in ("configs", "locations"):
+                matched_mode = "config"
+            elif arg in ("settings",):
+                matched_mode = "guide"
+            elif arg in ("hx",):
+                matched_mode = "helix"
+
+        if matched_mode:
+            launch_tabbed_rofi(initial_mode=matched_mode)
+            return
+
+    # Default invocation
+    launch_tabbed_rofi(initial_mode="qtile")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Session and autostart services monitor and interactive management menu for Qtile-Con."""
+import html
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+# Ensure UTF-8 locale environment
+os.environ["LANG"] = os.environ.get("LANG", "en_US.UTF-8")
+os.environ["LC_ALL"] = os.environ.get("LC_ALL", "en_US.UTF-8")
+
+
+def get_theme_path():
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    theme = os.environ.get("QTILE_ROFI_THEME", str(config_dir / "themes/catppuccin-mocha.rasi"))
+    if not os.path.isfile(theme):
+        repo_theme = Path(__file__).resolve().parent.parent / "themes/catppuccin-mocha.rasi"
+        if repo_theme.is_file():
+            theme = str(repo_theme)
+    return theme
+
+
+def get_session_services():
+    """Retrieve running systemd user services and session background daemons."""
+    services = []
+
+    # 1. Systemd user services
+    try:
+        cmd = [
+            "systemctl", "--user", "list-units",
+            "--type=service", "--state=running",
+            "--no-pager", "--no-legend"
+        ]
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+        for line in out.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(None, 4)
+            unit_name = parts[0]
+            desc = parts[4] if len(parts) >= 5 else unit_name
+            # Clean up unit name
+            clean_name = unit_name.replace(".service", "")
+            services.append({
+                "type": "systemd",
+                "unit": unit_name,
+                "name": clean_name,
+                "description": desc,
+            })
+    except Exception:
+        pass
+
+    # 2. Key session background daemons
+    session_daemons = [
+        ("gesture-daemon", "X11 Touchpad Gesture Daemon"),
+        ("greenclip", "X11 Clipboard History Daemon"),
+        ("nm-applet", "NetworkManager System Tray Applet"),
+        ("dunst", "Desktop Notification Daemon"),
+        ("picom", "X11 Compositor"),
+        ("pipewire", "PipeWire Multimedia Service"),
+        ("pipewire-pulse", "PulseAudio Emulation Daemon"),
+        ("wireplumber", "Session / Policy Manager"),
+        ("dbus-daemon", "D-Bus Session Bus"),
+    ]
+
+    for d_name, d_desc in session_daemons:
+        # Check if running and not already counted via systemd
+        already_in = any(s["name"] == d_name for s in services)
+        if not already_in:
+            try:
+                res = subprocess.run(["pgrep", "-x", d_name], capture_output=True, text=True)
+                if res.returncode == 0:
+                    services.append({
+                        "type": "daemon",
+                        "unit": d_name,
+                        "name": d_name,
+                        "description": d_desc,
+                    })
+            except Exception:
+                pass
+
+    services.sort(key=lambda s: s["name"].lower())
+    count = len(services)
+
+    core_daemons = [
+        ("pipewire", "PipeWire Multimedia Audio"),
+        ("wireplumber", "Session Policy Manager"),
+        ("gesture-daemon", "Touchpad Gestures Daemon"),
+        ("greenclip", "Clipboard History Manager"),
+        ("dunst", "Desktop Notifications"),
+        ("nm-applet", "NetworkManager Applet"),
+        ("picom", "X11 Compositor"),
+        ("dbus-daemon", "D-Bus Session Bus"),
+    ]
+
+    active_core = []
+    core_names_set = set()
+    for d_prefix, d_label in core_daemons:
+        matched = next((s for s in services if s["name"] == d_prefix or s["name"].startswith(d_prefix)), None)
+        if matched and matched["name"] not in core_names_set:
+            core_names_set.add(matched["name"])
+            active_core.append((matched["name"], d_label))
+
+    other_count = max(0, count - len(active_core))
+
+    tooltip_lines = [
+        f"<b>Active Units:</b> <span color='#a6e3a1'>{count} running services &amp; daemons</span>",
+        "",
+        "<b><span color='#89b4fa'>󰒓 Core Session Daemons:</span></b>",
+    ]
+    for name, desc in active_core:
+        tooltip_lines.append(f"  • <span color='#a6e3a1'>✔</span> <b>{html.escape(name)}</b> <span color='#a6adc8'>· {html.escape(desc)}</span>")
+
+    if other_count > 0:
+        tooltip_lines.append(f"  <span color='#6c7086'>+ {other_count} additional user units (systemd &amp; daemons)</span>")
+
+    tooltip_lines.extend([
+        "",
+        "<b><span color='#cba6f7'>Options &amp; Actions:</span></b>",
+        "  • <span color='#b4befe'>Left-click:</span> Interactive Services Menu (Status/Restart/Stop)",
+        "  • <span color='#b4befe'>Right-click:</span> Deep Service Memory Investigation",
+    ])
+
+    summary = f"󰒓 {count} svcs"
+
+    return {
+        "count": count,
+        "summary": summary,
+        "tooltip": "\n".join(tooltip_lines),
+        "services": services,
+    }
+
+
+def show_menu():
+    """Interactive Rofi menu for session services."""
+    data = get_session_services()
+    services = data.get("services", [])
+    if not services:
+        return
+
+    menu_lines = []
+    for s in services:
+        badge = "󰒓" if s["type"] == "systemd" else "󰌢"
+        menu_lines.append(f"{badge}  {s['name']:<24} · {s['description']}")
+
+    theme = get_theme_path()
+    rofi_cmd = ["rofi", "-dmenu", "-i", "-p", f"Services ({len(services)}) > "]
+    if os.path.isfile(theme):
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    selected, _ = proc.communicate(input="\n".join(menu_lines))
+    selected = (selected or "").strip()
+
+    if not selected:
+        return
+
+    # Extract service name
+    parts = selected.split("·")[0].strip().split()
+    if len(parts) >= 2:
+        svc_name = parts[1].strip()
+    else:
+        return
+
+    matched = next((s for s in services if s["name"] == svc_name), None)
+    if not matched:
+        return
+
+    unit = matched["unit"]
+    is_systemd = matched["type"] == "systemd"
+
+    actions = [
+        f"󰘚  Status & Info ({unit})",
+        f"󰑓  Restart Service ({unit})",
+        f"󰐥  Stop Service ({unit})",
+    ]
+    if is_systemd:
+        actions.append(f"󰈙  View Journal Logs (journalctl -u {unit})")
+    actions.append("󰅖  Cancel")
+
+    action_cmd = ["rofi", "-dmenu", "-i", "-p", f"{unit} > "]
+    if os.path.isfile(theme):
+        action_cmd.extend(["-theme", theme])
+
+    a_proc = subprocess.Popen(action_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    choice, _ = a_proc.communicate(input="\n".join(actions))
+    choice = (choice or "").strip()
+
+    if not choice or "Cancel" in choice:
+        return
+
+    term = os.environ.get("QTILE_TERMINAL") or shutil.which("alacritty") or "alacritty"
+
+    if "Status & Info" in choice:
+        if is_systemd:
+            cmd = f"systemctl --user status {unit}; echo ''; read -p 'Press Enter to close...'"
+        else:
+            cmd = f"ps aux | grep {unit}; echo ''; read -p 'Press Enter to close...'"
+        subprocess.Popen([term, "-e", "bash", "-c", cmd], start_new_session=True)
+    elif "Restart" in choice:
+        if is_systemd:
+            subprocess.run(["systemctl", "--user", "restart", unit])
+            subprocess.run(["notify-send", "-a", "Services", "Service Restarted", f"Restarted {unit}"])
+        else:
+            subprocess.run(["pkill", "-x", unit])
+            subprocess.run(["notify-send", "-a", "Services", "Daemon Stopped", f"Killed {unit} (autostart will resume if active)"])
+    elif "Stop" in choice:
+        if is_systemd:
+            subprocess.run(["systemctl", "--user", "stop", unit])
+            subprocess.run(["notify-send", "-a", "Services", "Service Stopped", f"Stopped {unit}"])
+        else:
+            subprocess.run(["pkill", "-x", unit])
+            subprocess.run(["notify-send", "-a", "Services", "Daemon Stopped", f"Stopped {unit}"])
+    elif "Journal Logs" in choice and is_systemd:
+        cmd = f"journalctl --user -u {unit} -e -n 100; read -p 'End of logs. Press Enter to close...'"
+        subprocess.Popen([term, "-e", "bash", "-c", cmd], start_new_session=True)
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("--menu", "-m", "menu"):
+        show_menu()
+    else:
+        data = get_session_services()
+        print(json.dumps({
+            "count": data["count"],
+            "summary": data["summary"],
+            "tooltip": data["tooltip"],
+            "services": data["services"],
+        }))
+
+
+if __name__ == "__main__":
+    main()

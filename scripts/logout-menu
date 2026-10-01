@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+THEME="${QTILE_ROFI_THEME:-$CONFIG_DIR/themes/catppuccin-mocha.rasi}"
+if [[ ! -f "$THEME" && -f "$(dirname "$0")/../themes/catppuccin-mocha.rasi" ]]; then
+  THEME="$(dirname "$0")/../themes/catppuccin-mocha.rasi"
+fi
+choice="$(printf '%s\n' '󰍃  Log out' '󰜉  Lock screen' '󰜗  Reboot' '󰐥  Shut down' '󰅖  Cancel' | rofi -dmenu -i -p 'Power menu > ' -theme "$THEME" || true)"
+case "$choice" in
+  *"Log out"*)
+    if [[ -n "${XDG_SESSION_ID:-}" ]] && command -v loginctl >/dev/null 2>&1; then exec loginctl terminate-session "$XDG_SESSION_ID"; fi
+    notify-send "Qtile-Con" "Cannot identify this login session. Log out using your display manager."
+    ;;
+  *"Lock screen"*)
+    if command -v i3lock >/dev/null 2>&1; then exec i3lock; fi
+    notify-send "Qtile-Con" "Install i3lock to use the lock action."
+    ;;
+  *"Reboot"*) exec systemctl reboot ;;
+  *"Shut down"*) exec systemctl poweroff ;;
+  *) exit 0 ;;
+esac

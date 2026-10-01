@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Clipboard history manager with Rofi Catppuccin theme integration."""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+CACHE_DIR = Path.home() / ".cache"
+HISTORY_FILE = CACHE_DIR / "qtile-clipboard-history.json"
+MAX_ITEMS = 60
+
+
+def get_theme_path():
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    theme = os.environ.get("QTILE_ROFI_THEME", str(config_dir / "themes/catppuccin-mocha.rasi"))
+    if not os.path.isfile(theme):
+        repo_theme = Path(__file__).resolve().parent.parent / "themes/catppuccin-mocha.rasi"
+        if repo_theme.is_file():
+            theme = str(repo_theme)
+    return theme
+
+
+def get_current_clipboard():
+    """Retrieve current text from X11 clipboard via xclip or xsel."""
+    try:
+        return subprocess.check_output(
+            ["xclip", "-selection", "clipboard", "-o"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        try:
+            return subprocess.check_output(
+                ["xsel", "--clipboard", "--output"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            return ""
+
+
+def set_clipboard(text):
+    """Set text into X11 clipboard and primary selections."""
+    try:
+        proc = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+        proc.communicate(input=text.encode("utf-8"))
+    except Exception:
+        try:
+            proc = subprocess.Popen(["xsel", "--clipboard", "--input"], stdin=subprocess.PIPE)
+            proc.communicate(input=text.encode("utf-8"))
+        except Exception:
+            pass
+
+    try:
+        proc = subprocess.Popen(["xclip", "-selection", "primary"], stdin=subprocess.PIPE)
+        proc.communicate(input=text.encode("utf-8"))
+    except Exception:
+        pass
+
+
+def load_history():
+    if not HISTORY_FILE.is_file():
+        return []
+    try:
+        data = json.loads(HISTORY_FILE.read_text("utf-8"))
+        if isinstance(data, list):
+            return [str(x) for x in data if str(x).strip()]
+    except Exception:
+        pass
+    return []
+
+
+def save_history(items):
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    clean_items = []
+    seen = set()
+    for item in items:
+        stripped = item.strip()
+        if stripped and stripped not in seen:
+            seen.add(stripped)
+            clean_items.append(item)
+    clean_items = clean_items[:MAX_ITEMS]
+    HISTORY_FILE.write_text(json.dumps(clean_items, ensure_ascii=False, indent=2), "utf-8")
+
+
+def add_to_history(text):
+    if not text or not text.strip():
+        return
+    history = load_history()
+    # Remove if existing, then prepend
+    history = [item for item in history if item.strip() != text.strip()]
+    history.insert(0, text)
+    save_history(history)
+
+
+def run_daemon():
+    """Lightweight background loop tracking clipboard changes."""
+    last_text = get_current_clipboard()
+    if last_text:
+        add_to_history(last_text)
+
+    while True:
+        try:
+            time.sleep(1.5)
+            current = get_current_clipboard()
+            if current and current.strip() and current != last_text:
+                last_text = current
+                add_to_history(current)
+        except KeyboardInterrupt:
+            break
+        except Exception:
+            time.sleep(2)
+
+
+def show_menu():
+    # If greenclip is available and its daemon is working, use it
+    if shutil.which("greenclip") is not None:
+        try:
+            check = subprocess.run(["greenclip", "print"], capture_output=True, text=True, timeout=2)
+            if check.returncode == 0:
+                theme = get_theme_path()
+                cmd = ["rofi", "-modi", "clipboard:greenclip print", "-show", "clipboard"]
+                if os.path.isfile(theme):
+                    cmd.extend(["-theme", theme])
+                os.execvp("rofi", cmd)
+                return
+        except Exception:
+            pass
+
+    # Native history
+    current = get_current_clipboard()
+    if current:
+        add_to_history(current)
+
+    history = load_history()
+    if not history:
+        theme = get_theme_path()
+        rofi_cmd = ["rofi", "-dmenu", "-i", "-p", "Clipboard > "]
+        if os.path.isfile(theme):
+            rofi_cmd.extend(["-theme", theme])
+        proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        proc.communicate(input="󰅍  Clipboard is currently empty\n󰅍  Copy text to populate history")
+        return
+
+    # Map display string to full content
+    display_map = {}
+    display_lines = []
+    for idx, item in enumerate(history):
+        # Create a neat single-line summary for display
+        single_line = " ".join(item.strip().split())
+        if len(single_line) > 85:
+            single_line = single_line[:82] + "…"
+        label = f"󰅍  {idx + 1:2d}  {single_line}"
+        display_map[label] = item
+        display_lines.append(label)
+
+    display_lines.append("󰅖  Cancel")
+
+    theme = get_theme_path()
+    rofi_cmd = ["rofi", "-dmenu", "-i", "-p", "Clipboard > "]
+    if os.path.isfile(theme):
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    selected, _ = proc.communicate(input="\n".join(display_lines))
+    selected = (selected or "").strip()
+
+    if not selected or "Cancel" in selected:
+        return
+
+    full_text = display_map.get(selected)
+    if full_text:
+        set_clipboard(full_text)
+        if subprocess.run(["command", "-v", "notify-send"], shell=True).returncode == 0:
+            subprocess.run(["notify-send", "-a", "Clipboard", "Copied to clipboard", full_text[:40]])
+
+
+def main():
+    action = sys.argv[1] if len(sys.argv) > 1 else "show"
+    if action == "daemon":
+        run_daemon()
+    else:
+        show_menu()
+
+
+if __name__ == "__main__":
+    main()

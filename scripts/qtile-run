@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Smart command launcher for Qtile / Rofi
+# - Detects GUI applications (via .desktop entries and shared library linking) and runs them detached.
+# - Launches CLI tools, TUIs, and shell commands inside the configured terminal (Alacritty).
+set -euo pipefail
+
+# Ensure unified PATH with Cargo, Homebrew, Pipx, Go, Flatpak, Snap, sbin, and local scripts
+export PATH="$HOME/.cargo/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$HOME/.linuxbrew/bin:$HOME/.linuxbrew/sbin:$HOME/.local/bin:$HOME/.local/share/pipx/venvs/qtile/bin:$HOME/go/bin:/usr/local/go/bin:/snap/bin:/var/lib/flatpak/exports/bin:$HOME/.local/share/flatpak/exports/bin:$HOME/.config/qtile/scripts:$HOME/scripts:/usr/local/sbin:/usr/sbin:/sbin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+
+# Ensure UTF-8 locale
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: qtile-run <command> [args...]" >&2
+  exit 1
+fi
+
+cmd_name="$1"
+term="${QTILE_TERMINAL:-alacritty}"
+term_bin="$(command -v "$term" 2>/dev/null || command -v alacritty || echo "/usr/bin/alacritty")"
+
+is_gui=0
+
+# 1. Check .desktop files for direct match or Exec definition
+desktop_dirs=(
+  "$HOME/.local/share/applications"
+  "/usr/share/applications"
+  "/usr/local/share/applications"
+  "/var/lib/snapd/desktop/applications"
+  "/var/lib/flatpak/exports/share/applications"
+  "$HOME/.local/share/flatpak/exports/share/applications"
+)
+
+cmd_clean="$(basename "$cmd_name")"
+cmd_alt1="${cmd_clean//./_}"
+cmd_alt2="${cmd_clean//_/.}"
+
+for app_dir in "${desktop_dirs[@]}"; do
+  if [[ -d "$app_dir" ]]; then
+    # Exact or sanitized .desktop name check
+    for dt_candidate in "$app_dir/$cmd_clean.desktop" "$app_dir/$cmd_alt1.desktop" "$app_dir/$cmd_alt2.desktop"; do
+      if [[ -f "$dt_candidate" ]]; then
+        if ! grep -qi "^Terminal=true" "$dt_candidate"; then
+          is_gui=1
+          break 2
+        fi
+      fi
+    done
+  fi
+done
+
+# If not found directly, search Exec line in desktop files
+if [[ $is_gui -eq 0 ]]; then
+  existing_dirs=()
+  for d in "${desktop_dirs[@]}"; do
+    [[ -d "$d" ]] && existing_dirs+=("$d")
+  done
+  if [[ ${#existing_dirs[@]} -gt 0 ]]; then
+    match="$(grep -rli -m 1 -E "^Exec=.*(\b|/)${cmd_clean}(\b|[ %])" "${existing_dirs[@]}" 2>/dev/null || true)"
+    if [[ -n "$match" && -f "$match" ]]; then
+      if ! grep -qi "^Terminal=true" "$match"; then
+        is_gui=1
+      fi
+    fi
+  fi
+fi
+
+# 2. Check dynamic libraries or filename heuristic if binary exists
+if [[ $is_gui -eq 0 ]]; then
+  if [[ "$cmd_name" =~ \.gui$ || "$cmd_name" =~ _gui$ ]]; then
+    is_gui=1
+  else
+    bin_path="$(command -v "$cmd_name" 2>/dev/null || true)"
+    if [[ -n "$bin_path" && -x "$bin_path" ]]; then
+      resolved_path="$(realpath "$bin_path" 2>/dev/null || echo "$bin_path")"
+      if [[ -f "$resolved_path" ]]; then
+        # If linked against common GUI toolkits (GTK, Qt, X11, Wayland, SDL)
+        gui_libs="$(ldd "$resolved_path" 2>/dev/null | grep -iE 'libgtk|libx11|libqt|libwayland|libxcb|libgdk|libfltk|libsdl' || true)"
+        if [[ -n "$gui_libs" ]]; then
+          is_gui=1
+        fi
+      fi
+    fi
+  fi
+fi
+
+# If it is a GUI app, launch detached in background
+if [[ $is_gui -eq 1 ]]; then
+  nohup "$@" >/dev/null 2>&1 &
+  exit 0
+fi
+
+# 3. For CLI applications, launch in Terminal
+case "$cmd_name" in
+  htop|btop|top|iotop|nmon|glances|nano|micro|vim|vi|nvim|less|more|ranger|mc|nnn|lf)
+    # Fullscreen TUI apps run directly in terminal
+    exec "$term_bin" -e "$@"
+    ;;
+  python|python3|ipython|bash|sh|zsh|fish|node)
+    # Interactive shells / repls run directly in terminal
+    exec "$term_bin" -e "$@"
+    ;;
+  *)
+    # General CLI commands (cargo, pacu, witr, ping, git, etc.):
+    # Run command and keep interactive shell open so user can see output and continue working
+    exec "$term_bin" -e bash -ic "$* ; exec bash"
+    ;;
+esac

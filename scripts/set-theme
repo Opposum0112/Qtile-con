@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+THEME="${QTILE_ROFI_THEME:-$CONFIG_DIR/themes/catppuccin-mocha.rasi}"
+base="$(dirname "$0")/../themes"
+if [[ ! -f "$THEME" && -f "$base/catppuccin-mocha.rasi" ]]; then
+  THEME="$base/catppuccin-mocha.rasi"
+fi
+
+options=()
+while IFS= read -r f; do
+  [[ -n "$f" ]] && options+=("󰏘  $f")
+done < <(find "$base" -maxdepth 1 -type f -name '*.json' ! -name 'current_theme.json' -printf '%f\n' | sort)
+
+options+=("󰅖  Cancel")
+
+choice="$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p 'Theme > ' -theme "$THEME" || true)"
+[[ -n "$choice" && "$choice" != *"Cancel"* ]] || exit 0
+
+theme_file="$(sed 's/^󰏘[[:space:]]*//' <<< "$choice")"
+global_sync="$(dirname "$0")/apply-global-theme"
+if [[ -x "$global_sync" ]]; then
+  "$global_sync" "$base/$theme_file"
+else
+  python3 "$(dirname "$0")/theme_apply.py" "$base/$theme_file"
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send "Qtile theme" "Applied $theme_file. Press Super+Ctrl+R to reload the palette."
+  fi
+fi

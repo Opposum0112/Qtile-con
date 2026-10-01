@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Interactive Catppuccin volume slider popup for Qtile.
+
+Provides a smooth graphical slider, preset buttons, scroll adjustment,
+and live volume feedback without heavy dependencies (pure standard library Tkinter).
+"""
+import os
+import shutil
+import subprocess
+import sys
+import tkinter as tk
+from tkinter import ttk
+
+# Catppuccin Mocha Palette
+BG = "#1e1e2e"
+SURFACE0 = "#313244"
+SURFACE1 = "#45475a"
+TEXT = "#cdd6f4"
+ACCENT = "#cba6f7"
+RED = "#f38ba8"
+GREEN = "#a6e3a1"
+MUTED = "#6c7086"
+
+
+def get_current_volume():
+    """Return current volume (0-100) and muted state (bool)."""
+    if shutil.which("pamixer"):
+        try:
+            vol_out = subprocess.check_output(["pamixer", "--get-volume"], text=True).strip()
+            mute_out = subprocess.check_output(["pamixer", "--get-mute"], text=True).strip()
+            return int(vol_out), mute_out == "true"
+        except Exception:
+            pass
+    if shutil.which("pactl"):
+        try:
+            out = subprocess.check_output(["pactl", "get-sink-volume", "@DEFAULT_SINK@"], text=True)
+            mute = subprocess.check_output(["pactl", "get-sink-mute", "@DEFAULT_SINK@"], text=True)
+            import re
+            m = re.search(r"(\d+)%", out)
+            vol = int(m.group(1)) if m else 50
+            return vol, "yes" in mute.lower()
+        except Exception:
+            pass
+    return 50, False
+
+
+def set_volume_val(val):
+    """Set system volume to val (0-100)."""
+    v = max(0, min(100, int(val)))
+    if shutil.which("pamixer"):
+        subprocess.Popen(["pamixer", "--set-volume", str(v)], stderr=subprocess.DEVNULL)
+    elif shutil.which("pactl"):
+        subprocess.Popen(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{v}%"], stderr=subprocess.DEVNULL)
+    elif shutil.which("amixer"):
+        subprocess.Popen(["amixer", "-q", "set", "Master", f"{v}%"], stderr=subprocess.DEVNULL)
+
+
+def toggle_mute_action():
+    """Toggle mute state."""
+    if shutil.which("pamixer"):
+        subprocess.Popen(["pamixer", "--toggle-mute"], stderr=subprocess.DEVNULL)
+    elif shutil.which("pactl"):
+        subprocess.Popen(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"], stderr=subprocess.DEVNULL)
+    elif shutil.which("amixer"):
+        subprocess.Popen(["amixer", "-q", "set", "Master", "toggle"], stderr=subprocess.DEVNULL)
+
+
+class VolumeSliderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Volume Control")
+        self.root.overrideredirect(True)  # Borderless popup
+        self.root.configure(bg=BG)
+
+        # Size & Position: 360x145 near top right of screen
+        w = 360
+        h = 145
+        sw = self.root.winfo_screenwidth()
+        x = sw - w - 20
+        y = 44  # Just beneath the Qtile 36px bar
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+
+        self.vol, self.muted = get_current_volume()
+        self.timer_id = None
+
+        self._build_ui()
+        self._bind_events()
+        self._reset_timer()
+
+    def _build_ui(self):
+        # Outer border frame
+        border = tk.Frame(self.root, bg=ACCENT, padx=1, pady=1)
+        border.pack(fill=tk.BOTH, expand=True)
+
+        container = tk.Frame(border, bg=BG, padx=16, pady=12)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        # Header Row: Icon + Percentage + Mute + Close
+        hdr = tk.Frame(container, bg=BG)
+        hdr.pack(fill=tk.X, pady=(0, 8))
+
+        icon_str = "󰖁" if self.muted else ("󰕾" if self.vol > 50 else ("󰖀" if self.vol > 20 else "󰕿"))
+        self.lbl_title = tk.Label(
+            hdr, text=f"{icon_str}  Volume: {self.vol}%",
+            font=("JetBrainsMono Nerd Font", 12, "bold"),
+            bg=BG, fg=TEXT if not self.muted else RED,
+        )
+        self.lbl_title.pack(side=tk.LEFT)
+
+        btn_close = tk.Button(
+            hdr, text="✕", font=("sans-serif", 10),
+            bg=BG, fg=MUTED, activebackground=BG, activeforeground=RED,
+            bd=0, cursor="hand2", command=self.close,
+        )
+        btn_close.pack(side=tk.RIGHT, padx=(4, 0))
+
+        self.btn_mute = tk.Button(
+            hdr, text="Unmute" if self.muted else "Mute",
+            font=("JetBrainsMono Nerd Font", 9),
+            bg=SURFACE0, fg=RED if self.muted else TEXT,
+            activebackground=SURFACE1, activeforeground=TEXT,
+            bd=0, padx=8, pady=2, cursor="hand2", command=self.on_mute_click,
+        )
+        self.btn_mute.pack(side=tk.RIGHT)
+
+        # Slider style
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Catppuccin.Horizontal.TScale",
+            troughcolor=SURFACE0,
+            background=ACCENT,
+            sliderlength=20,
+            sliderthickness=14,
+            relief="flat",
+        )
+
+        self.scale_var = tk.DoubleVar(value=self.vol)
+        self.scale = ttk.Scale(
+            container, from_=0, to=100, orient=tk.HORIZONTAL,
+            variable=self.scale_var, style="Catppuccin.Horizontal.TScale",
+            command=self.on_slider_move,
+        )
+        self.scale.pack(fill=tk.X, pady=(0, 10))
+
+        # Preset buttons row
+        btn_row = tk.Frame(container, bg=BG)
+        btn_row.pack(fill=tk.X)
+
+        presets = [20, 40, 60, 80, 100]
+        for p in presets:
+            b = tk.Button(
+                btn_row, text=f"{p}%", font=("JetBrainsMono Nerd Font", 9),
+                bg=SURFACE0, fg=TEXT, activebackground=SURFACE1, activeforeground=ACCENT,
+                bd=0, padx=6, pady=2, cursor="hand2",
+                command=lambda val=p: self.set_preset(val),
+            )
+            b.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+
+        btn_mixer = tk.Button(
+            btn_row, text="Mixer", font=("JetBrainsMono Nerd Font", 9),
+            bg=SURFACE0, fg=ACCENT, activebackground=SURFACE1, activeforeground=ACCENT,
+            bd=0, padx=6, pady=2, cursor="hand2", command=self.open_mixer,
+        )
+        btn_mixer.pack(side=tk.LEFT, padx=2)
+
+    def _bind_events(self):
+        self.root.bind("<Escape>", lambda e: self.close())
+        self.root.bind("<q>", lambda e: self.close())
+        self.root.bind("<Button-1>", lambda e: self._reset_timer())
+        self.root.bind("<Button-4>", lambda e: self.adjust_delta(5))
+        self.root.bind("<Button-5>", lambda e: self.adjust_delta(-5))
+
+    def _reset_timer(self):
+        if self.timer_id:
+            self.root.after_cancel(self.timer_id)
+        # Auto-close after 5 seconds of inactivity
+        self.timer_id = self.root.after(5000, self.close)
+
+    def on_slider_move(self, val):
+        self._reset_timer()
+        v = int(float(val))
+        self.vol = v
+        set_volume_val(v)
+        self._update_label()
+
+    def set_preset(self, val):
+        self._reset_timer()
+        self.vol = val
+        self.scale_var.set(val)
+        set_volume_val(val)
+        if self.muted:
+            toggle_mute_action()
+            self.muted = False
+        self._update_label()
+
+    def on_mute_click(self):
+        self._reset_timer()
+        toggle_mute_action()
+        self.muted = not self.muted
+        self.btn_mute.configure(
+            text="Unmute" if self.muted else "Mute",
+            fg=RED if self.muted else TEXT,
+        )
+        self._update_label()
+
+    def adjust_delta(self, delta):
+        self._reset_timer()
+        new_v = max(0, min(100, self.vol + delta))
+        self.set_preset(new_v)
+
+    def _update_label(self):
+        icon_str = "󰖁" if self.muted else ("󰕾" if self.vol > 50 else ("󰖀" if self.vol > 20 else "󰕿"))
+        self.lbl_title.configure(
+            text=f"{icon_str}  Volume: {self.vol}%",
+            fg=TEXT if not self.muted else RED,
+        )
+
+    def open_mixer(self):
+        if shutil.which("pavucontrol"):
+            subprocess.Popen(["pavucontrol"], stderr=subprocess.DEVNULL)
+        else:
+            term = os.environ.get("QTILE_TERMINAL", "alacritty")
+            subprocess.Popen([term, "-e", "alsamixer"], stderr=subprocess.DEVNULL)
+        self.close()
+
+    def close(self):
+        if self.timer_id:
+            self.root.after_cancel(self.timer_id)
+        self.root.destroy()
+
+
+def main():
+    root = tk.Tk()
+    app = VolumeSliderApp(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

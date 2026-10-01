@@ -1,0 +1,28 @@
+{
+  "name": "Ayu Dark",
+  "colors": {
+    "rosewater": "#e6e1cf",
+    "flamingo": "#ff8f40",
+    "pink": "#f29e74",
+    "mauve": "#d4bfff",
+    "red": "#f07178",
+    "maroon": "#ea6c73",
+    "peach": "#ff8f40",
+    "yellow": "#e6b450",
+    "green": "#aad94c",
+    "teal": "#95e6cb",
+    "sky": "#73d0ff",
+    "sapphire": "#59c2ff",
+    "blue": "#39bae6",
+    "lavender": "#b8a8ff",
+    "text": "#e6e1cf",
+    "subtext": "#bfbdb6",
+    "overlay": "#5c6773",
+    "surface2": "#272d38",
+    "surface1": "#1a1f29",
+    "surface0": "#131721",
+    "base": "#0b0e14",
+    "mantle": "#06080a",
+    "crust": "#010203"
+  }
+}

@@ -1,0 +1,36 @@
+/* Dynamic Qtile-Con Rofi Theme — catppuccin-mocha */
+configuration {
+    show-icons: true;
+    icon-theme: "Adwaita";
+    modes: "combi,drun,run";
+    combi-modes: "drun,run";
+    combi-hide-mode-prefix: true;
+    drun-match-fields: "name,generic,exec";
+    display-combi: "󰍉 All";
+    display-drun: "󰣆 Apps";
+    display-run: "󰌌 Run";
+    display-file: "󰈞 File";
+    display-files: "󰈞 File";
+    display-content: "󰈬 Content";
+    terminal: "alacritty";
+    run-command: "qtile-run {cmd}";
+    run-shell-command: "qtile-run {cmd}";
+    sidebar-mode: true;
+    kb-mode-next: "Shift+Right,Control+Tab";
+    kb-mode-previous: "Shift+Left,Control+ISO_Left_Tab";
+}
+* { font: "JetBrainsMono Nerd Font 10.5"; background-color: transparent; text-color: #cdd6f4; }
+window { location: center; anchor: center; width: 38%; border: 2px; border-color: #cba6f7; border-radius: 12px; background-color: #1e1e2e; padding: 14px; }
+mainbox { background-color: #1e1e2e; spacing: 8px; children: [ inputbar, message, listview, mode-switcher ]; }
+inputbar { background-color: #313244; border: 1px; border-color: #45475a; border-radius: 8px; padding: 7px 10px; children: [ prompt, entry ]; spacing: 8px; }
+prompt { text-color: #cba6f7; }
+entry { placeholder: "Search…"; placeholder-color: #6c7086; text-color: #cdd6f4; }
+message { background-color: #313244; border-radius: 6px; padding: 6px 10px; }
+listview { background-color: #1e1e2e; lines: 7; columns: 1; fixed-height: false; spacing: 3px; scrollbar: false; }
+element { background-color: #1e1e2e; border-radius: 6px; padding: 5px 8px; spacing: 8px; }
+element selected { background-color: #45475a; text-color: #f5e0dc; border: 1px; border-color: #cba6f7; }
+element-icon { size: 1.25em; margin: 0 8px 0 0; background-color: inherit; }
+element-text { background-color: inherit; text-color: inherit; }
+mode-switcher { background-color: transparent; spacing: 4px; }
+button { background-color: #313244; text-color: #cdd6f4; border-radius: 6px; padding: 4px 6px; }
+button selected { background-color: #cba6f7; text-color: #1e1e2e; }

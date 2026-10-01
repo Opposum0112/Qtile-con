@@ -1,0 +1,28 @@
+{
+  "name": "Gruvbox Dark",
+  "colors": {
+    "rosewater": "#ebdbb2",
+    "flamingo": "#d65d0e",
+    "pink": "#d3869b",
+    "mauve": "#d3869b",
+    "red": "#fb4934",
+    "maroon": "#cc241d",
+    "peach": "#fe8019",
+    "yellow": "#fabd2f",
+    "green": "#b8bb26",
+    "teal": "#8ec07c",
+    "sky": "#83a598",
+    "sapphire": "#458588",
+    "blue": "#83a598",
+    "lavender": "#b16286",
+    "text": "#ebdbb2",
+    "subtext": "#bdae93",
+    "overlay": "#928374",
+    "surface2": "#504945",
+    "surface1": "#3c3836",
+    "surface0": "#32302f",
+    "base": "#282828",
+    "mantle": "#1d2021",
+    "crust": "#141617"
+  }
+}

@@ -1,0 +1,571 @@
+#!/usr/bin/env python3
+"""Compact system and process investigation tool (similar to sysdig / procs).
+
+Provides deep memory inspection, file descriptor analysis, I/O counters,
+thread tracking, live syscall tracing, systemd service memory investigation,
+login autostart analysis, and interactive system diagnostics.
+"""
+import glob
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+# Ensure UTF-8 locale environment
+os.environ["LANG"] = os.environ.get("LANG", "en_US.UTF-8")
+os.environ["LC_ALL"] = os.environ.get("LC_ALL", "en_US.UTF-8")
+
+# Catppuccin Mocha terminal ANSI colors
+CLR_RESET = "\033[0m"
+CLR_BOLD = "\033[1m"
+CLR_DIM = "\033[2m"
+CLR_MAUVE = "\033[38;2;203;166;247m"
+CLR_BLUE = "\033[38;2;137;180;250m"
+CLR_SAPPHIRE = "\033[38;2;116;199;236m"
+CLR_TEAL = "\033[38;2;148;226;213m"
+CLR_GREEN = "\033[38;2;166;227;161m"
+CLR_YELLOW = "\033[38;2;249;226;175m"
+CLR_PEACH = "\033[38;2;250;179;135m"
+CLR_RED = "\033[38;2;243;139;168m"
+CLR_SUBTEXT = "\033[38;2;166;173;200m"
+CLR_SURFACE = "\033[38;2;88;91;112m"
+
+
+def format_bytes(b):
+    """Format bytes into human-readable B, KB, MB, GB."""
+    if b < 1024:
+        return f"{b} B"
+    elif b < 1024 * 1024:
+        return f"{b / 1024:.1f} KB"
+    elif b < 1024 * 1024 * 1024:
+        return f"{b / (1024 * 1024):.1f} MB"
+    else:
+        return f"{b / (1024 * 1024 * 1024):.2f} GB"
+
+
+def get_system_mem():
+    """Retrieve system memory statistics from /proc/meminfo in KB."""
+    stats = {}
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    val = parts[1].strip().split()[0]
+                    stats[key] = int(val)
+    except Exception:
+        pass
+    total = stats.get("MemTotal", 1)
+    free = stats.get("MemFree", 0)
+    avail = stats.get("MemAvailable", free)
+    buffers = stats.get("Buffers", 0)
+    cached = stats.get("Cached", 0)
+    used = total - avail
+    swap_total = stats.get("SwapTotal", 0)
+    swap_free = stats.get("SwapFree", 0)
+    swap_used = swap_total - swap_free
+    return {
+        "total": total * 1024,
+        "used": used * 1024,
+        "free": free * 1024,
+        "available": avail * 1024,
+        "buffers": buffers * 1024,
+        "cached": cached * 1024,
+        "swap_total": swap_total * 1024,
+        "swap_used": swap_used * 1024,
+        "percent": (used / total) * 100 if total else 0,
+    }
+
+
+def get_pid_status(pid):
+    """Parse /proc/<pid>/status into a dictionary."""
+    status = {}
+    path = f"/proc/{pid}/status"
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    status[parts[0].strip()] = parts[1].strip()
+    except Exception:
+        return None
+    return status
+
+
+def get_pid_io(pid):
+    """Parse /proc/<pid>/io into a dictionary."""
+    io_data = {}
+    path = f"/proc/{pid}/io"
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    try:
+                        io_data[parts[0].strip()] = int(parts[1].strip())
+                    except ValueError:
+                        pass
+    except Exception:
+        pass
+    return io_data
+
+
+def get_pid_fds(pid):
+    """Count and categorize open file descriptors."""
+    fd_dir = f"/proc/{pid}/fd"
+    if not os.path.exists(fd_dir):
+        return 0, []
+    try:
+        entries = os.listdir(fd_dir)
+        count = len(entries)
+        samples = []
+        for e in entries:
+            try:
+                target = os.readlink(os.path.join(fd_dir, e))
+                samples.append((e, target))
+            except Exception:
+                continue
+        return count, samples
+    except Exception:
+        return 0, []
+
+
+def get_process_list():
+    """Retrieve top CPU and Memory processes."""
+    cmd = ["ps", "-eo", "pid,user,%cpu,%mem,rss,comm", "--sort=-%mem", "--no-headers"]
+    try:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+        lines = [l.strip() for l in out.strip().splitlines() if l.strip()]
+    except Exception:
+        lines = []
+
+    procs = []
+    for line in lines:
+        parts = line.split(None, 5)
+        if len(parts) == 6:
+            pid, user, cpu_s, mem_s, rss_s, comm = parts
+            try:
+                procs.append({
+                    "pid": int(pid),
+                    "user": user,
+                    "cpu": float(cpu_s),
+                    "mem": float(mem_s),
+                    "rss_kb": int(rss_s),
+                    "comm": comm,
+                })
+            except ValueError:
+                continue
+    return procs
+
+
+def get_services_and_autostart():
+    """Collect running systemd user services and login autostart items with memory consumption."""
+    items = []
+
+    # 1. Systemd user services
+    if shutil.which("systemctl"):
+        try:
+            cmd = ["systemctl", "--user", "list-units", "--type=service", "--state=running", "--no-pager", "--no-legend"]
+            out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+            for line in out.strip().splitlines():
+                parts = line.split(None, 4)
+                if not parts:
+                    continue
+                unit = parts[0]
+                desc = parts[4] if len(parts) >= 5 else ""
+
+                # Query unit MainPID and MemoryCurrent
+                try:
+                    show_out = subprocess.check_output(
+                        ["systemctl", "--user", "show", unit, "-p", "MainPID", "-p", "MemoryCurrent", "-p", "ActiveState"],
+                        text=True, stderr=subprocess.DEVNULL,
+                    )
+                    props = dict(l.split("=", 1) for l in show_out.strip().splitlines() if "=" in l)
+                    main_pid = int(props.get("MainPID", 0))
+                    mem_raw = props.get("MemoryCurrent", "0")
+                    mem_bytes = int(mem_raw) if mem_raw.isdigit() else 0
+                except Exception:
+                    main_pid = 0
+                    mem_bytes = 0
+
+                # Fallback to /proc/pid/status if MemoryCurrent is unavailable
+                if mem_bytes == 0 and main_pid > 0:
+                    status = get_pid_status(main_pid)
+                    if status and "VmRSS" in status:
+                        try:
+                            mem_bytes = int(status["VmRSS"].split()[0]) * 1024
+                        except ValueError:
+                            pass
+
+                items.append({
+                    "type": "systemd",
+                    "name": unit,
+                    "pid": main_pid,
+                    "mem_bytes": mem_bytes,
+                    "desc": desc[:36],
+                })
+        except Exception:
+            pass
+
+    # 2. Qtile Autostart script daemons
+    autostart_script = os.path.expanduser("~/.config/qtile/scripts/autostart")
+    if os.path.isfile(autostart_script):
+        # Look for known daemons usually spawned on login: feh, greenclip, nm-applet, etc.
+        for daemon in ["greenclip", "nm-applet", "pipewire", "wireplumber", "dunst"]:
+            if shutil.which("pgrep"):
+                try:
+                    pids = subprocess.check_output(["pgrep", "-x", daemon], text=True, stderr=subprocess.DEVNULL).strip().split()
+                    for p in pids:
+                        status = get_pid_status(p)
+                        if status and "VmRSS" in status:
+                            try:
+                                rss_b = int(status["VmRSS"].split()[0]) * 1024
+                                # Check if not already added by systemd
+                                if not any(it["pid"] == int(p) for it in items):
+                                    items.append({
+                                        "type": "autostart",
+                                        "name": f"{daemon} (autostart)",
+                                        "pid": int(p),
+                                        "mem_bytes": rss_b,
+                                        "desc": f"Desktop background daemon ({daemon})",
+                                    })
+                            except ValueError:
+                                pass
+                except Exception:
+                    pass
+
+    # Sort descending by memory usage
+    items.sort(key=lambda x: x["mem_bytes"], reverse=True)
+    return items
+
+
+def inspect_pid_details(pid):
+    """Detailed investigation of a specific process."""
+    while True:
+        status = get_pid_status(pid)
+        if not status:
+            print(f"\n{CLR_RED}Process PID {pid} is no longer running.{CLR_RESET}")
+            input(f"\n{CLR_SUBTEXT}Press Enter to return...{CLR_RESET}")
+            return
+
+        name = status.get("Name", "unknown")
+        state = status.get("State", "unknown")
+        ppid = status.get("PPID", "?")
+        threads_cnt = status.get("Threads", "1")
+
+        # Memory stats
+        vm_rss = status.get("VmRSS", "0 kB")
+        vm_size = status.get("VmSize", "0 kB")
+        vm_data = status.get("VmData", "0 kB")
+        vm_stk = status.get("VmStk", "0 kB")
+        vm_exe = status.get("VmExe", "0 kB")
+        vm_swap = status.get("VmSwap", "0 kB")
+        rss_anon = status.get("RssAnon", "0 kB")
+        rss_file = status.get("RssFile", "0 kB")
+        rss_shmem = status.get("RssShmem", "0 kB")
+
+        # Command line & paths
+        cmdline = ""
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmdline = f.read().replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+        except Exception:
+            cmdline = name
+        if not cmdline:
+            cmdline = f"[{name}]"
+
+        exe_path = ""
+        try:
+            exe_path = os.readlink(f"/proc/{pid}/exe")
+        except Exception:
+            exe_path = "N/A (kernel process or restricted)"
+
+        cwd_path = ""
+        try:
+            cwd_path = os.readlink(f"/proc/{pid}/cwd")
+        except Exception:
+            cwd_path = "N/A"
+
+        # I/O counters
+        io_data = get_pid_io(pid)
+        r_bytes = format_bytes(io_data.get("read_bytes", 0))
+        w_bytes = format_bytes(io_data.get("write_bytes", 0))
+        r_sys = io_data.get("syscr", 0)
+        w_sys = io_data.get("syscw", 0)
+
+        # FDs
+        fd_count, fd_samples = get_pid_fds(pid)
+        sockets = [s for _, s in fd_samples if s.startswith("socket:")]
+        files = [s for _, s in fd_samples if s.startswith("/") and not s.startswith("/dev/")]
+
+        # Total RAM comparison
+        sys_mem = get_system_mem()
+        try:
+            rss_val_kb = int(vm_rss.split()[0])
+            rss_percent = (rss_val_kb * 1024 / sys_mem["total"]) * 100 if sys_mem["total"] else 0
+        except Exception:
+            rss_percent = 0.0
+
+        # Query witr ancestry if available
+        witr_bin = shutil.which("witr") or os.path.expanduser("~/.local/bin/witr")
+        witr_ancestry = ""
+        if os.path.isfile(witr_bin) and os.access(witr_bin, os.X_OK):
+            try:
+                res = subprocess.run([witr_bin, "--pid", str(pid), "--short", "--no-color"], capture_output=True, text=True, timeout=1.5)
+                if res.stdout.strip():
+                    witr_ancestry = res.stdout.strip()
+            except Exception:
+                pass
+
+        os.system("clear")
+        print(f"{CLR_BOLD}{CLR_MAUVE}╭─────────────────────────────────────────────────────────────────────────────╮{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}│  󰒋 PROCESS INVESTIGATION: {CLR_YELLOW}{name}{CLR_MAUVE} (PID {CLR_SAPPHIRE}{pid}{CLR_MAUVE}){' ' * max(1, 44 - len(name) - len(str(pid)))}│{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_BOLD}Executable:{CLR_RESET} {CLR_TEAL}{exe_path[:60]}{CLR_RESET}")
+        print(f"│  {CLR_BOLD}Directory:{CLR_RESET}  {CLR_SUBTEXT}{cwd_path[:60]}{CLR_RESET}")
+        print(f"│  {CLR_BOLD}State:{CLR_RESET}      {CLR_GREEN}{state}{CLR_RESET}    {CLR_BOLD}PPID:{CLR_RESET} {CLR_BLUE}{ppid}{CLR_RESET}    {CLR_BOLD}Threads:{CLR_RESET} {CLR_YELLOW}{threads_cnt}{CLR_RESET}")
+        print(f"│  {CLR_BOLD}Command:{CLR_RESET}    {CLR_SUBTEXT}{cmdline[:62]}{CLR_RESET}")
+        if witr_ancestry:
+            print(f"│  {CLR_BOLD}Origin ({CLR_YELLOW}witr{CLR_RESET}{CLR_BOLD}):{CLR_RESET} {CLR_SAPPHIRE}{witr_ancestry[:62]}{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_BOLD}{CLR_BLUE}󰘚 Memory Breakdown:{CLR_RESET}")
+        print(f"│    • {CLR_BOLD}Resident (RSS):{CLR_RESET}   {CLR_GREEN}{vm_rss}{CLR_RESET}  ({CLR_YELLOW}{rss_percent:.1f}%{CLR_RESET} of physical RAM)")
+        print(f"│    • {CLR_BOLD}Virtual Size:{CLR_RESET}     {CLR_SUBTEXT}{vm_size}{CLR_RESET}")
+        print(f"│    • {CLR_BOLD}Heap (Anon):{CLR_RESET}       {CLR_SUBTEXT}{rss_anon}{CLR_RESET}    {CLR_BOLD}File Mappings:{CLR_RESET} {CLR_SUBTEXT}{rss_file}{CLR_RESET}")
+        print(f"│    • {CLR_BOLD}Shared Memory:{CLR_RESET}     {CLR_SUBTEXT}{rss_shmem}{CLR_RESET}    {CLR_BOLD}Swap Used:{CLR_RESET}     {CLR_PEACH}{vm_swap}{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_BOLD}{CLR_SAPPHIRE}󰒋 I/O & File Descriptors:{CLR_RESET}")
+        print(f"│    • {CLR_BOLD}Open Descriptors:{CLR_RESET} {CLR_YELLOW}{fd_count}{CLR_RESET} total ({len(files)} files, {len(sockets)} sockets/pipes)")
+        print(f"│    • {CLR_BOLD}I/O Activity:{CLR_RESET}     {CLR_GREEN}{r_bytes}{CLR_RESET} read ({r_sys} calls) / {CLR_PEACH}{w_bytes}{CLR_RESET} written ({w_sys} calls)")
+        if files:
+            print(f"│    • {CLR_BOLD}Active Files:{CLR_RESET}     {CLR_SUBTEXT}{files[0][:50]}{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}╰─────────────────────────────────────────────────────────────────────────────╯{CLR_RESET}")
+
+        print(f"\n{CLR_BOLD}Actions:{CLR_RESET}")
+        print(f"  {CLR_YELLOW}[w]{CLR_RESET} Why Is This Running? (witr)      {CLR_BLUE}[h]{CLR_RESET} Inspect in htop (PID {pid})")
+        print(f"  {CLR_SAPPHIRE}[t]{CLR_RESET} Live Syscall Trace (strace)       {CLR_TEAL}[b]{CLR_RESET} System Monitor (btop)")
+        print(f"  {CLR_GREEN}[f]{CLR_RESET} List Open Files & Sockets (lsof)   {CLR_PEACH}[e]{CLR_RESET} Environment Variables")
+        print(f"  {CLR_RED}[k]{CLR_RESET} Terminate (SIGTERM - 15)          {CLR_RED}[9]{CLR_RESET} Force Kill (SIGKILL - 9)")
+        print(f"  {CLR_MAUVE}[r]{CLR_RESET} Refresh stats                     {CLR_SUBTEXT}[q]{CLR_RESET} Back to Process List")
+
+        try:
+            choice = input(f"\n{CLR_BOLD}Choose action > {CLR_RESET}").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return
+
+        if choice in ("q", "quit", "exit"):
+            return
+        elif choice == "r":
+            continue
+        elif choice == "w":
+            if os.path.isfile(witr_bin) and os.access(witr_bin, os.X_OK):
+                os.system(f"{witr_bin} --pid {pid} --tree || {witr_bin} --pid {pid}")
+                input(f"\n{CLR_SUBTEXT}Press Enter to return...{CLR_RESET}")
+            else:
+                print(f"{CLR_RED}witr is not installed.{CLR_RESET}")
+                time.sleep(1.5)
+        elif choice == "t":
+            if shutil.which("strace"):
+                os.system(f"strace -p {pid} 2>&1")
+                input(f"\n{CLR_SUBTEXT}Trace finished. Press Enter to continue...{CLR_RESET}")
+            else:
+                print(f"{CLR_RED}strace is not installed.{CLR_RESET}")
+                time.sleep(1.5)
+        elif choice == "h":
+            if shutil.which("htop"):
+                subprocess.run(["htop", "-p", str(pid)])
+        elif choice == "b":
+            if shutil.which("btop"):
+                subprocess.run(["btop", "--utf-force"])
+        elif choice == "f":
+            if shutil.which("lsof"):
+                os.system(f"lsof -p {pid} | less")
+            else:
+                os.system(f"ls -l /proc/{pid}/fd | less")
+        elif choice == "m":
+            os.system(f"cat /proc/{pid}/maps | less")
+        elif choice == "e":
+            os.system(f"tr '\\0' '\\n' < /proc/{pid}/environ 2>/dev/null | less")
+        elif choice == "k":
+            try:
+                os.kill(pid, 15)
+                print(f"{CLR_GREEN}Sent SIGTERM to process {pid}.{CLR_RESET}")
+                time.sleep(1)
+            except Exception as e:
+                print(f"{CLR_RED}Error: {e}{CLR_RESET}")
+                time.sleep(1.5)
+        elif choice == "9":
+            try:
+                os.kill(pid, 9)
+                print(f"{CLR_RED}Sent SIGKILL to process {pid}.{CLR_RESET}")
+                time.sleep(1)
+                return
+            except Exception as e:
+                print(f"{CLR_RED}Error: {e}{CLR_RESET}")
+                time.sleep(1.5)
+
+
+def show_services_investigation():
+    """Analyze memory consumption of systemd user services and login autostart items."""
+    while True:
+        items = get_services_and_autostart()
+        total_service_mem = sum(it["mem_bytes"] for it in items)
+
+        os.system("clear")
+        print(f"{CLR_BOLD}{CLR_MAUVE}╭─────────────────────────────────────────────────────────────────────────────╮{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}│  󰒋 LOGIN SERVICES & AUTOSTART MEMORY INVESTIGATION                          │{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_BOLD}Active Units:{CLR_RESET} {CLR_YELLOW}{len(items)}{CLR_RESET} items          {CLR_BOLD}Total Memory Used:{CLR_RESET} {CLR_GREEN}{format_bytes(total_service_mem)}{CLR_RESET}           │")
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_DIM}{'#':>2}  {'UNIT / SERVICE':<28} {'PID':>7}   {'MEMORY':>9}   {'DESCRIPTION':<24}{CLR_RESET}│")
+
+        for idx, it in enumerate(items[:14], 1):
+            mem_str = format_bytes(it["mem_bytes"])
+            pid_str = str(it["pid"]) if it["pid"] > 0 else "-"
+            print(f"│  {CLR_YELLOW}{idx:>2}{CLR_RESET}  {CLR_SAPPHIRE}{it['name'][:28]:<28}{CLR_RESET} {CLR_BLUE}{pid_str:>7}{CLR_RESET}   {CLR_GREEN}{mem_str:>9}{CLR_RESET}   {CLR_SUBTEXT}{it['desc'][:24]:<24}{CLR_RESET}│")
+
+        print(f"{CLR_BOLD}{CLR_MAUVE}╰─────────────────────────────────────────────────────────────────────────────╯{CLR_RESET}")
+
+        print(f"\n{CLR_BOLD}Commands:{CLR_RESET}")
+        print(f"  {CLR_BOLD}[1-14]{CLR_RESET} Deep inspect service PID        {CLR_YELLOW}[+]{CLR_RESET} Launch / Start Service")
+        print(f"  {CLR_TEAL}[r]{CLR_RESET} Restart Service                   {CLR_RED}[k]{CLR_RESET} Stop Service")
+        print(f"  {CLR_BLUE}[l]{CLR_RESET} View Service Journal Logs         {CLR_MAUVE}[u]{CLR_RESET} Refresh list")
+        print(f"  {CLR_SUBTEXT}[q]{CLR_RESET} Back to System Overview")
+
+        try:
+            choice = input(f"\n{CLR_BOLD}Select service action > {CLR_RESET}").strip()
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if choice.lower() in ("q", "back", "exit"):
+            break
+        elif choice.lower() in ("u", "r") and not choice.isdigit():
+            continue
+        elif choice == "+":
+            unit_name = input(f"{CLR_YELLOW}Enter service name to start (e.g. pipewire.service) > {CLR_RESET}").strip()
+            if unit_name:
+                os.system(f"systemctl --user start {unit_name}")
+                print(f"{CLR_GREEN}Started {unit_name}{CLR_RESET}")
+                time.sleep(1)
+        elif choice.isdigit() and 1 <= int(choice) <= len(items):
+            target = items[int(choice) - 1]
+            if target["pid"] > 0:
+                inspect_pid_details(target["pid"])
+            else:
+                print(f"{CLR_RED}Unit {target['name']} does not have an active MainPID.{CLR_RESET}")
+                time.sleep(1.5)
+        elif choice.lower().startswith("l "):
+            unit = choice.split(None, 1)[1]
+            os.system(f"journalctl --user -u {unit} -n 40 | less")
+        elif choice.lower().startswith("k "):
+            unit = choice.split(None, 1)[1]
+            os.system(f"systemctl --user stop {unit}")
+            print(f"{CLR_RED}Stopped {unit}{CLR_RESET}")
+            time.sleep(1)
+
+
+def show_system_overview():
+    """Display system-wide resource overview and top processes."""
+    while True:
+        sys_mem = get_system_mem()
+        procs = get_process_list()
+
+        # Load average
+        try:
+            with open("/proc/loadavg", "r") as f:
+                load = f.read().split()[:3]
+                load_str = " ".join(load)
+        except Exception:
+            load_str = "N/A"
+
+        # Uptime
+        try:
+            with open("/proc/uptime", "r") as f:
+                up_sec = int(float(f.read().split()[0]))
+                up_str = f"{up_sec // 3600}h {(up_sec % 3600) // 60}m {up_sec % 60}s"
+        except Exception:
+            up_str = "N/A"
+
+        os.system("clear")
+        print(f"{CLR_BOLD}{CLR_MAUVE}╭─────────────────────────────────────────────────────────────────────────────╮{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}│  󰒋 SYSTEM & PROCESS INVESTIGATION (Compact Diagnostics)                    │{CLR_RESET}")
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_BOLD}Uptime:{CLR_RESET}   {CLR_TEAL}{up_str:<18}{CLR_RESET} {CLR_BOLD}Load Avg:{CLR_RESET} {CLR_YELLOW}{load_str:<20}{CLR_RESET}         │")
+        print(f"│  {CLR_BOLD}RAM Used:{CLR_RESET} {CLR_GREEN}{format_bytes(sys_mem['used']):<8}{CLR_RESET} / {CLR_BLUE}{format_bytes(sys_mem['total']):<8}{CLR_RESET} ({CLR_YELLOW}{sys_mem['percent']:.1f}%{CLR_RESET})  {CLR_BOLD}Available:{CLR_RESET} {CLR_SAPPHIRE}{format_bytes(sys_mem['available']):<10}{CLR_RESET} │")
+        print(f"│  {CLR_BOLD}Swap:{CLR_RESET}     {CLR_PEACH}{format_bytes(sys_mem['swap_used']):<8}{CLR_RESET} / {format_bytes(sys_mem['swap_total']):<8}        {CLR_BOLD}Cached:{CLR_RESET}    {CLR_SUBTEXT}{format_bytes(sys_mem['cached']):<10}{CLR_RESET} │")
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_BOLD}{CLR_BLUE}󰘚 Top Memory Consuming Processes:{CLR_RESET}                                          │")
+        print(f"│  {CLR_DIM}{'PID':>7}  {'USER':<9} {'%MEM':>6}  {'RSS':>9}  {'%CPU':>6}  {'COMMAND':<25}{CLR_RESET}│")
+
+        for p in procs[:8]:
+            rss_str = format_bytes(p["rss_kb"] * 1024)
+            print(f"│  {CLR_SAPPHIRE}{p['pid']:>7}{CLR_RESET}  {p['user']:<9} {CLR_YELLOW}{p['mem']:>5.1f}%{CLR_RESET}  {CLR_GREEN}{rss_str:>9}{CLR_RESET}  {p['cpu']:>5.1f}%  {CLR_TEAL}{p['comm'][:24]:<25}{CLR_RESET}│")
+
+        # Top CPU
+        top_cpu = sorted(procs, key=lambda x: x["cpu"], reverse=True)[:5]
+        print(f"{CLR_BOLD}{CLR_MAUVE}├─────────────────────────────────────────────────────────────────────────────┤{CLR_RESET}")
+        print(f"│  {CLR_BOLD}{CLR_GREEN}󰍛 Top CPU Consuming Processes:{CLR_RESET}                                             │")
+        for p in top_cpu:
+            rss_str = format_bytes(p["rss_kb"] * 1024)
+            print(f"│  {CLR_SAPPHIRE}{p['pid']:>7}{CLR_RESET}  {p['user']:<9} {CLR_YELLOW}{p['cpu']:>5.1f}%{CLR_RESET}  {CLR_GREEN}{rss_str:>9}{CLR_RESET}  {p['mem']:>5.1f}%  {CLR_TEAL}{p['comm'][:24]:<25}{CLR_RESET}│")
+        print(f"{CLR_BOLD}{CLR_MAUVE}╰─────────────────────────────────────────────────────────────────────────────╯{CLR_RESET}")
+
+        print(f"\n{CLR_BOLD}Commands:{CLR_RESET}")
+        print(f"  {CLR_BOLD}[PID]{CLR_RESET} Deep inspect PID (e.g. 11208)     {CLR_YELLOW}[w]{CLR_RESET} Process Causation TUI (witr)")
+        print(f"  {CLR_BLUE}[s]{CLR_RESET} Services & Autostart Memory        {CLR_TEAL}[b]{CLR_RESET} Open btop (System Monitor)")
+        print(f"  {CLR_MAUVE}[r]{CLR_RESET} Refresh overview                  {CLR_SUBTEXT}[q]{CLR_RESET} Quit")
+
+        try:
+            choice = input(f"\n{CLR_BOLD}Select PID or action > {CLR_RESET}").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if choice in ("q", "quit", "exit"):
+            break
+        elif choice == "r" or not choice:
+            continue
+        elif choice == "w":
+            witr_bin = shutil.which("witr") or os.path.expanduser("~/.local/bin/witr")
+            if os.path.isfile(witr_bin) and os.access(witr_bin, os.X_OK):
+                subprocess.run([witr_bin, "-i"])
+        elif choice == "s":
+            show_services_investigation()
+        elif choice == "m":
+            if shutil.which("htop"):
+                subprocess.run(["htop", "-s", "PERCENT_MEM"])
+        elif choice == "b":
+            if shutil.which("btop"):
+                subprocess.run(["btop", "--utf-force"])
+        elif choice.isdigit():
+            inspect_pid_details(int(choice))
+
+
+def main():
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].strip()
+        if arg in ("-h", "--help"):
+            print("Usage: sys-investigate [PID|--services]")
+            print("Compact system, process, and login service investigation tool.")
+            sys.exit(0)
+        elif arg in ("-s", "--services", "services"):
+            show_services_investigation()
+            sys.exit(0)
+        elif arg.isdigit():
+            inspect_pid_details(int(arg))
+            sys.exit(0)
+        elif arg in ("-p", "--pid") and len(sys.argv) > 2 and sys.argv[2].isdigit():
+            inspect_pid_details(int(sys.argv[2]))
+            sys.exit(0)
+
+    show_system_overview()
+
+
+if __name__ == "__main__":
+    main()

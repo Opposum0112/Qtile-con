@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Script: cockpit-info
+# Purpose: Cockpit Web Console management and Qtile status bar integration.
+# ==============================================================================
+set -euo pipefail
+
+# Ensure unified PATH
+export PATH="$HOME/.cargo/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$HOME/.linuxbrew/bin:$HOME/.linuxbrew/sbin:$HOME/.local/bin:$HOME/.local/share/pipx/venvs/qtile/bin:$HOME/go/bin:/usr/local/go/bin:/snap/bin:/var/lib/flatpak/exports/bin:$HOME/.local/share/flatpak/exports/bin:$HOME/.config/qtile/scripts:$HOME/scripts:/usr/local/sbin:/usr/sbin:/sbin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+
+THEME="${XDG_CONFIG_HOME:-$HOME/.config}/qtile/themes/catppuccin-mocha.rasi"
+COCKPIT_URL="https://localhost:9090"
+
+is_active() {
+  systemctl is-active --quiet cockpit.socket 2>/dev/null || systemctl is-active --quiet cockpit.service 2>/dev/null
+}
+
+is_listening() {
+  ss -tulpn 2>/dev/null | grep -q ":9090 " || false
+}
+
+status_json() {
+  local active=false
+  local summary="󰟀 OFF"
+  local port_status="Not listening"
+  
+  if is_active || is_listening; then
+    active=true
+    summary="󰟀 ON"
+    port_status="Active on port 9090"
+  fi
+
+  local tooltip="Cockpit Web Console\nStatus: $port_status\nURL: $COCKPIT_URL\nClick: Open Console | Right-Click: Management Menu"
+
+  # Return JSON payload for Qtile GenPollText widget
+  python3 -c "
+import json
+print(json.dumps({
+    'summary': '$summary',
+    'tooltip': '''$tooltip''',
+    'active': $([[ "$active" == "true" ]] && echo "True" || echo "False"),
+    'url': '$COCKPIT_URL'
+}, ensure_ascii=False))
+"
+}
+
+open_console() {
+  if ! is_active && ! is_listening; then
+    notify-send -i preferences-desktop-remote-desktop "Cockpit" "Starting Cockpit socket..." 2>/dev/null || true
+    if command -v pkexec >/dev/null 2>&1; then
+      pkexec --disable-internal-agent systemctl start cockpit.socket 2>/dev/null || true
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo systemctl start cockpit.socket 2>/dev/null || true
+    fi
+  fi
+
+  notify-send -i preferences-desktop-remote-desktop "Cockpit Web Console" "Opening $COCKPIT_URL in browser..." 2>/dev/null || true
+  xdg-open "$COCKPIT_URL" >/dev/null 2>&1 &
+}
+
+menu() {
+  local active_status="Inactive"
+  if is_active || is_listening; then
+    active_status="Active (listening on :9090)"
+  fi
+
+  local options=(
+    "󰟀  Open Web Console ($COCKPIT_URL)"
+    "󰐥  Start Cockpit Service"
+    "󰅚  Stop Cockpit Service"
+    "󰜉  Restart Cockpit Service"
+    "󰒓  View Cockpit Service Logs"
+    "󰅖  Cancel"
+  )
+
+  local choice
+  if [[ -f "$THEME" ]]; then
+    choice="$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "Cockpit ($active_status) > " -theme "$THEME" || true)"
+  else
+    choice="$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "Cockpit ($active_status) > " || true)"
+  fi
+
+  [[ -n "$choice" && "$choice" != *"Cancel"* ]] || exit 0
+
+  case "$choice" in
+    *"Open Web Console"*)
+      open_console
+      ;;
+    *"Start Cockpit"*)
+      pkexec --disable-internal-agent systemctl start cockpit.socket cockpit.service 2>/dev/null || true
+      notify-send -i system-software-update "Cockpit" "Started Cockpit service." 2>/dev/null || true
+      ;;
+    *"Stop Cockpit"*)
+      pkexec --disable-internal-agent systemctl stop cockpit.socket cockpit.service 2>/dev/null || true
+      notify-send -i system-software-update "Cockpit" "Stopped Cockpit service." 2>/dev/null || true
+      ;;
+    *"Restart Cockpit"*)
+      pkexec --disable-internal-agent systemctl restart cockpit.socket 2>/dev/null || true
+      notify-send -i system-software-update "Cockpit" "Restarted Cockpit socket." 2>/dev/null || true
+      ;;
+    *"View Cockpit Service Logs"*)
+      local term="${QTILE_TERMINAL:-alacritty}"
+      local term_bin
+      term_bin="$(command -v "$term" 2>/dev/null || command -v alacritty || echo "/usr/bin/alacritty")"
+      exec "$term_bin" -e bash -c "journalctl -u cockpit.service -u cockpit.socket -n 100 --no-pager ; echo '' ; read -p 'Press Enter to close...'"
+      ;;
+  esac
+}
+
+case "${1:---status}" in
+  --status|-s)
+    status_json
+    ;;
+  --open|-o)
+    open_console
+    ;;
+  --menu|-m)
+    menu
+    ;;
+  *)
+    status_json
+    ;;
+esac

@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Critical system indicators monitor for Qtile-Con.
+
+Monitors CPU throttling/load, high memory consumption, low disk space,
+battery depletion, and thermal limits, displaying real-time warning pills.
+"""
+import glob
+import json
+import os
+import shutil
+import sys
+
+# Ensure UTF-8 locale environment
+os.environ["LANG"] = os.environ.get("LANG", "en_US.UTF-8")
+os.environ["LC_ALL"] = os.environ.get("LC_ALL", "en_US.UTF-8")
+
+
+def get_indicators():
+    alerts = []
+    details = []
+
+    # 1. CPU Load
+    cpu_pct = 0
+    try:
+        with open("/proc/loadavg", "r") as f:
+            load1 = float(f.read().split()[0])
+        cpu_count = os.cpu_count() or 1
+        cpu_pct = int((load1 / cpu_count) * 100)
+        details.append(f"CPU Load: {cpu_pct}% (1m avg, alert > 85%)")
+        if cpu_pct >= 85:
+            alerts.append(f"󰈸 CPU {cpu_pct}%")
+    except Exception:
+        pass
+
+    # 2. RAM Usage
+    mem_pct = 0
+    try:
+        mem = {}
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    mem[parts[0].strip()] = int(parts[1].strip().split()[0])
+        total = mem.get("MemTotal", 1)
+        avail = mem.get("MemAvailable", mem.get("MemFree", 0))
+        mem_pct = int(((total - avail) / total) * 100)
+        used_gb = (total - avail) / (1024 * 1024)
+        total_gb = total / (1024 * 1024)
+        details.append(f"Memory: {mem_pct}% ({used_gb:.1f}G/{total_gb:.1f}G, alert > 85%)")
+        if mem_pct >= 85:
+            alerts.append(f"󰍛 RAM {mem_pct}%")
+    except Exception:
+        pass
+
+    # 3. Root Disk Usage
+    disk_pct = 0
+    try:
+        du = shutil.disk_usage("/")
+        disk_pct = int((du.used / du.total) * 100)
+        used_gb = du.used / (1024 * 1024 * 1024)
+        total_gb = du.total / (1024 * 1024 * 1024)
+        details.append(f"Root Disk: {disk_pct}% ({used_gb:.1f}G/{total_gb:.1f}G, alert > 90%)")
+        if disk_pct >= 90:
+            alerts.append(f"󰋊 DISK {disk_pct}%")
+    except Exception:
+        pass
+
+    # 4. Battery Level
+    try:
+        bats = glob.glob("/sys/class/power_supply/BAT*")
+        if bats:
+            bat = bats[0]
+            with open(os.path.join(bat, "capacity"), "r") as f:
+                cap = int(f.read().strip())
+            with open(os.path.join(bat, "status"), "r") as f:
+                st = f.read().strip().lower()
+            details.append(f"Battery: {cap}% ({st}, alert < 15%)")
+            if cap <= 15 and st != "charging":
+                alerts.append(f"󰂃 BAT {cap}%")
+    except Exception:
+        pass
+
+    # 5. Thermal Warning
+    try:
+        thermal_zones = glob.glob("/sys/class/thermal/thermal_zone*/temp")
+        max_temp = 0
+        for tz in thermal_zones:
+            try:
+                with open(tz, "r") as f:
+                    t = int(f.read().strip()) / 1000.0
+                    if t > max_temp:
+                        max_temp = t
+            except Exception:
+                continue
+        if max_temp > 0:
+            details.append(f"Peak Temperature: {max_temp:.1f}°C (alert > 82°C)")
+            if max_temp >= 82.0:
+                alerts.append(f"󰔏 {max_temp:.0f}°C")
+    except Exception:
+        pass
+
+    is_alert = len(alerts) > 0
+    if is_alert:
+        bar_text = " ".join(alerts)
+    else:
+        bar_text = "󰗠 OK"
+
+    tooltip_lines = ["󰗠 System Health & Critical Indicators:", ""]
+    for d in details:
+        tooltip_lines.append(f"  • {d}")
+
+    if is_alert:
+        tooltip_lines.extend(["", "⚠️ ACTIVE WARNINGS:"])
+        for a in alerts:
+            tooltip_lines.append(f"  • {a}")
+
+    tooltip_lines.extend(["", "Click: system investigation (sys-investigate)"])
+
+    return {
+        "text": bar_text,
+        "is_alert": is_alert,
+        "alerts": alerts,
+        "cpu_pct": cpu_pct,
+        "mem_pct": mem_pct,
+        "disk_pct": disk_pct,
+        "tooltip": "\n".join(tooltip_lines),
+    }
+
+
+def main():
+    data = get_indicators()
+    print(json.dumps(data))
+
+
+if __name__ == "__main__":
+    main()

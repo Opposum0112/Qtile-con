@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/qtile"
+THEME="${QTILE_ROFI_THEME:-$CONFIG_DIR/themes/catppuccin-mocha.rasi}"
+if [[ ! -f "$THEME" && -f "$(dirname "$0")/../themes/catppuccin-mocha.rasi" ]]; then
+  THEME="$(dirname "$0")/../themes/catppuccin-mocha.rasi"
+fi
+
+if ! command -v nmcli >/dev/null 2>&1; then
+  command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "nmcli is required to manage Wi-Fi connections."
+  exit 1
+fi
+
+wifi_state="$(nmcli radio wifi 2>/dev/null || echo "enabled")"
+
+if [[ "$wifi_state" != "enabled" ]]; then
+  choice="$(printf '%s\n' "󰖩  Turn Wi-Fi On" "󰒓  Network Settings (nm-connection-editor)" "󰅖  Cancel" | rofi -dmenu -i -p "Wi-Fi is Off > " -theme "$THEME" || true)"
+  case "$choice" in
+    *"Turn Wi-Fi On"*)
+      nmcli radio wifi on
+      command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Wi-Fi turned on"
+      ;;
+    *"Network Settings"*)
+      command -v nm-connection-editor >/dev/null 2>&1 && nohup nm-connection-editor >/dev/null 2>&1 &
+      ;;
+  esac
+  exit 0
+fi
+
+# Active SSID and signal
+active_ssid="$(nmcli -t -f active,ssid dev wifi 2>/dev/null | grep '^yes:' | cut -d: -f2 | head -n1 || true)"
+
+# Scan available networks (IN-USE:SSID:SIGNAL:SECURITY) sorted by signal descending
+raw_networks="$(nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list 2>/dev/null | sort -t: -k3,3nr || true)"
+
+options=()
+if [[ -n "$active_ssid" ]]; then
+  options+=("󰖩  Connected: $active_ssid")
+fi
+
+declare -A seen_ssids
+while IFS=: read -r in_use ssid signal security; do
+  [[ -z "$ssid" ]] && continue
+  [[ "$ssid" == "$active_ssid" ]] && continue
+  [[ -n "${seen_ssids[$ssid]:-}" ]] && continue
+  seen_ssids["$ssid"]=1
+
+  sec_str="${security:-Open}"
+  [[ -z "$sec_str" ]] && sec_str="Open"
+  options+=("󰖩  $ssid ($signal% · $sec_str)")
+done <<< "$raw_networks"
+
+options+=(
+  "󰖩  Rescan Networks"
+  "󰖪  Turn Wi-Fi Off"
+  "󰒓  Network Settings (nm-connection-editor)"
+  "󰅖  Cancel"
+)
+
+prompt_text="Wi-Fi"
+if [[ -n "$active_ssid" ]]; then
+  prompt_text="Wi-Fi ($active_ssid)"
+fi
+
+choice="$(printf '%s\n' "${options[@]}" | rofi -dmenu -i -p "$prompt_text > " -theme "$THEME" || true)"
+[[ -n "$choice" ]] || exit 0
+
+case "$choice" in
+  *"Cancel"*)
+    exit 0
+    ;;
+  *"Rescan Networks"*)
+    nmcli dev wifi rescan >/dev/null 2>&1 || true
+    exec "$0"
+    ;;
+  *"Turn Wi-Fi Off"*)
+    nmcli radio wifi off
+    command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Wi-Fi turned off"
+    exit 0
+    ;;
+  *"Network Settings"*)
+    if command -v nm-connection-editor >/dev/null 2>&1; then
+      nohup nm-connection-editor >/dev/null 2>&1 &
+    fi
+    exit 0
+    ;;
+  *"Connected:"*)
+    command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Already connected to $active_ssid"
+    exit 0
+    ;;
+  *)
+    # User selected an available SSID to connect to
+    selected_line="$(sed -E 's/^󰖩[[:space:]]+//' <<< "$choice")"
+    selected_ssid="$(sed -E 's/[[:space:]]+\([0-9]+%.*//' <<< "$selected_line")"
+    [[ -n "$selected_ssid" ]] || exit 0
+
+    # Check if this network connection is already saved
+    if nmcli -t -f NAME connection show | grep -Fxq "$selected_ssid"; then
+      command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Connecting to saved network $selected_ssid..."
+      if nmcli connection up "$selected_ssid" >/dev/null 2>&1; then
+        command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Connected to $selected_ssid"
+      else
+        command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Failed to connect to $selected_ssid"
+      fi
+      exit 0
+    fi
+
+    # Check if network is open
+    if grep -iq "Open" <<< "$choice"; then
+      command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Connecting to open network $selected_ssid..."
+      if nmcli dev wifi connect "$selected_ssid" >/dev/null 2>&1; then
+        command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Connected to $selected_ssid"
+      else
+        command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Failed to connect to $selected_ssid"
+      fi
+    else
+      # Prompt for Wi-Fi password
+      password="$(rofi -dmenu -password -p "󰖩 Password for $selected_ssid > " -theme "$THEME" </dev/null || true)"
+      if [[ -n "$password" ]]; then
+        command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Connecting to $selected_ssid..."
+        if nmcli dev wifi connect "$selected_ssid" password "$password" >/dev/null 2>&1; then
+          command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Successfully connected to $selected_ssid"
+        else
+          command -v notify-send >/dev/null 2>&1 && notify-send "Wi-Fi" "Failed to connect to $selected_ssid (check password)"
+        fi
+      fi
+    fi
+    ;;
+esac

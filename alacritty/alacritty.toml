@@ -1,0 +1,27 @@
+# Qtile-Con Alacritty starter config — Catppuccin Mocha
+# The installer only creates this file when no alacritty.toml already exists.
+[general]
+import = ["~/.config/alacritty/qtile-con-catppuccin-mocha.toml"]
+
+[window]
+padding = { x = 12, y = 10 }
+dynamic_padding = true
+opacity = 0.96
+decorations = "Full"
+
+[font]
+normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
+bold = { family = "JetBrainsMono Nerd Font", style = "Bold" }
+italic = { family = "JetBrainsMono Nerd Font", style = "Italic" }
+size = 11.0
+
+[cursor]
+style = { shape = "Block", blinking = "On" }
+blink_interval = 600
+
+[scrolling]
+history = 10000
+multiplier = 3
+
+[selection]
+save_to_clipboard = true

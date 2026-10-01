@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+"""Process information provider and interactive Rofi process manager.
+
+Classifies foreground interactive applications vs background tools & daemons,
+providing deep resource breakdown for the Qtile bar.
+Supports:
+- Left-click: Toggle popup list of running background processes
+- Right-click / Middle-click: Terminate selected processes safely (SIGTERM)
+"""
+import html
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def get_theme_path():
+    """Retrieve active Rofi theme path."""
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    theme = os.environ.get("QTILE_ROFI_THEME", str(config_dir / "themes/catppuccin-mocha.rasi"))
+    if not os.path.isfile(theme):
+        repo_theme = Path(__file__).resolve().parent.parent / "themes/catppuccin-mocha.rasi"
+        if repo_theme.is_file():
+            theme = str(repo_theme)
+    return theme
+
+
+def get_process_data():
+    """Retrieve process count and classify foreground vs background tools."""
+    try:
+        # ps: PID, TTY, %CPU, %MEM, COMM
+        cmd = ["ps", "-eo", "pid,tty,%cpu,%mem,comm", "--sort=-%cpu", "--no-headers"]
+        output = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+        lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
+    except Exception:
+        lines = []
+
+    count = len(lines)
+    parsed = []
+    bg_procs = []
+    fg_procs = []
+
+    for line in lines:
+        parts = line.split(None, 4)
+        if len(parts) == 5:
+            pid, tty, cpu_str, mem_str, comm = parts
+            try:
+                cpu = float(cpu_str)
+                mem = float(mem_str)
+                item = {
+                    "pid": pid,
+                    "tty": tty,
+                    "cpu": cpu,
+                    "mem": mem,
+                    "comm": comm,
+                    "is_bg": (tty == "?" or "daemon" in comm.lower() or "pipewire" in comm.lower()),
+                }
+                parsed.append(item)
+                if item["is_bg"]:
+                    bg_procs.append(item)
+                else:
+                    fg_procs.append(item)
+            except ValueError:
+                continue
+
+    bg_count = len(bg_procs)
+    fg_count = len(fg_procs)
+
+    # Top overall and background lists
+    top_cpu = sorted(parsed, key=lambda x: x["cpu"], reverse=True)[:4]
+    top_mem = sorted(parsed, key=lambda x: x["mem"], reverse=True)[:4]
+    top_bg_mem = sorted(bg_procs, key=lambda x: x["mem"], reverse=True)[:4]
+
+    witr_path = shutil.which("witr") or os.path.expanduser("~/.local/bin/witr")
+    witr_avail = os.path.isfile(witr_path) and os.access(witr_path, os.X_OK)
+    engine_str = "witr (Why Is This Running?)" if witr_avail else "Native /proc"
+
+    tooltip_lines = [
+        f"<b>Total:</b> <span color='#a6e3a1'>{count}</span>  │  <b>Apps:</b> <span color='#89b4fa'>{fg_count}</span>  │  <b>Background Tools:</b> <span color='#fab387'>{bg_count}</span>",
+        f"<b>Causation Engine:</b> <span color='#89dceb'>{engine_str}</span>",
+        "",
+        "<b><span color='#fab387'>󰘚 Top Memory Daemons:</span></b>",
+    ]
+    for p in top_bg_mem[:3]:
+        comm_esc = html.escape(p["comm"])
+        tooltip_lines.append(f"  • <b>{comm_esc}</b> <span color='#a6adc8'>(RAM: {p['mem']:.1f}%, CPU: {p['cpu']:.1f}%)</span>")
+
+    tooltip_lines.extend([
+        "",
+        "<b><span color='#89b4fa'>󰍛 Top CPU Processes:</span></b>",
+    ])
+    for p in top_cpu[:3]:
+        comm_esc = html.escape(p["comm"])
+        tooltip_lines.append(f"  • <b>{comm_esc}</b> <span color='#a6adc8'>({p['cpu']:.1f}% CPU)</span>")
+
+    tooltip_lines.extend([
+        "",
+        "<b><span color='#cba6f7'>Options &amp; Actions:</span></b>",
+        "  • <span color='#b4befe'>Left-click:</span> View running background processes",
+        "  • <span color='#b4befe'>Middle / Right-click:</span> Terminate selected process (SIGTERM)",
+    ])
+
+    summary = f"󰒋 {count} (bg:{bg_count})"
+
+    return {
+        "count": count,
+        "bg_count": bg_count,
+        "fg_count": fg_count,
+        "summary": summary,
+        "tooltip": "\n".join(tooltip_lines),
+        "processes": parsed,
+        "bg_processes": bg_procs,
+    }
+
+
+def show_terminate_menu():
+    """Show interactive popup list to select and terminate a background process safely via SIGTERM."""
+    data = get_process_data()
+    bg_procs = data.get("bg_processes", [])
+    if not bg_procs:
+        subprocess.run(["notify-send", "Qtile Process Manager", "No background processes found."])
+        return
+
+    theme = get_theme_path()
+    lines = []
+    pid_map = {}
+    for p in bg_procs[:50]:
+        comm = p["comm"]
+        pid = p["pid"]
+        desc = f"󰜉  Terminate {comm:<20}  [PID: {pid:>5}  │  RAM: {p['mem']:>4.1f}%  │  CPU: {p['cpu']:>4.1f}%]"
+        lines.append(desc)
+        pid_map[desc] = (pid, comm)
+
+    rofi_cmd = ["rofi", "-dmenu", "-i", "-p", "Terminate Process (SIGTERM) > "]
+    if os.path.isfile(theme):
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    selected, _ = proc.communicate(input="\n".join(lines))
+    selected = (selected or "").strip()
+
+    if selected in pid_map:
+        pid, comm = pid_map[selected]
+        try:
+            os.kill(int(pid), 15)  # 15 = SIGTERM
+            subprocess.run(["notify-send", "Process Terminated", f"Successfully sent SIGTERM to {comm} (PID {pid})"])
+        except Exception as e:
+            subprocess.run(["notify-send", "-u", "critical", "Process Error", f"Failed to terminate {comm}: {e}"])
+
+
+def show_menu(filter_bg=False):
+    """Show interactive process list in Rofi with the Catppuccin theme."""
+    data = get_process_data()
+    processes = data.get("bg_processes" if filter_bg else "processes", [])
+    if not processes:
+        if subprocess.run(["command", "-v", "notify-send"], shell=True).returncode == 0:
+            subprocess.run(["notify-send", "Qtile", "No process details available"])
+        return
+
+    title = "Background Tools" if filter_bg else "Processes"
+    menu_lines = []
+    menu_lines.append(f"󰒋     PID   %CPU   %MEM  TYPE  COMMAND")
+    for p in processes[:60]:
+        ptype = "bg" if p.get("is_bg") else "app"
+        menu_lines.append(f"󰒋  {p['pid']:>6}  {p['cpu']:>5.1f}  {p['mem']:>5.1f}  {ptype:<4}  {p['comm']}")
+
+    theme = get_theme_path()
+    rofi_cmd = ["rofi", "-dmenu", "-i", "-p", f"{title} ({len(processes)}) > "]
+    if os.path.isfile(theme):
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    selected, _ = proc.communicate(input="\n".join(menu_lines))
+    selected = (selected or "").strip()
+
+    if not selected or "PID" in selected:
+        return
+
+    clean_line = selected.replace("󰒋", "").strip()
+    tokens = clean_line.split()
+    if not tokens:
+        return
+
+    pid = tokens[0]
+    comm = tokens[-1] if len(tokens) >= 5 else "process"
+
+    # Action sub-menu with witr ancestry inspection
+    witr_path = shutil.which("witr") or str(Path.home() / ".local/bin/witr")
+    witr_avail = os.path.isfile(witr_path) and os.access(witr_path, os.X_OK)
+
+    action_prompt = f"Process {pid} ({comm})"
+    actions = []
+    if witr_avail:
+        actions.append(f"󰒋  Why Is This Running? (witr PID {pid})")
+        actions.append(f"󰒋  Interactive Process TUI (witr -i)")
+    actions.extend([
+        f"󰘚  Inspect Memory (htop %MEM)",
+        f"󰒋  Deep Investigation (sys-investigate PID {pid})",
+        f"󰍹  Inspect Process in htop (PID {pid})",
+        f"󰍛  System Monitor (btop)",
+        f"󰆍  Live Syscall Trace (strace PID {pid})",
+        f"󰜉  Terminate gracefully (SIGTERM)",
+        f"󰐥  Force kill (SIGKILL)",
+        f"󰅖  Cancel",
+    ])
+
+    action_cmd = ["rofi", "-dmenu", "-i", "-p", f"{action_prompt} > "]
+    if os.path.isfile(theme):
+        action_cmd.extend(["-theme", theme])
+
+    action_proc = subprocess.Popen(action_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    action_choice, _ = action_proc.communicate(input="\n".join(actions))
+    action_choice = (action_choice or "").strip()
+
+    if not action_choice or "Cancel" in action_choice:
+        return
+
+    terminal = os.environ.get("QTILE_TERMINAL") or shutil.which("alacritty") or "alacritty"
+    term_bin = shutil.which(terminal) or terminal
+
+    env = os.environ.copy()
+    env["LANG"] = "en_US.UTF-8"
+    env["LC_ALL"] = "en_US.UTF-8"
+
+    inv_script = str(Path(__file__).resolve().parent / "sys-investigate")
+    if not os.path.isfile(inv_script):
+        inv_script = str(Path.home() / ".config/qtile/scripts/sys-investigate")
+
+    if "why is this running" in action_choice.lower() or "witr pid" in action_choice.lower():
+        cmd = f"{witr_path} --pid {pid} --tree || {witr_path} --pid {pid}; echo ''; read -p 'Press Enter to close...'"
+        subprocess.Popen(
+            [term_bin, "-e", "bash", "-c", cmd],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=os.path.expanduser("~"),
+            env=env,
+        )
+    elif "interactive process tui" in action_choice.lower() or "witr -i" in action_choice.lower():
+        subprocess.Popen(
+            [term_bin, "-e", witr_path, "-i"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=os.path.expanduser("~"),
+            env=env,
+        )
+    elif "deep investigation" in action_choice.lower() or "sys-investigate" in action_choice.lower():
+        cmd = [term_bin, "-e", inv_script, str(pid)]
+        subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=os.path.expanduser("~"),
+            env=env,
+        )
+    elif "inspect memory" in action_choice.lower():
+        htop_bin = shutil.which("htop") or "htop"
+        subprocess.Popen(
+            [term_bin, "-e", htop_bin, "-s", "PERCENT_MEM"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=os.path.expanduser("~"),
+            env=env,
+        )
+    elif "process in htop" in action_choice.lower() or "htop" in action_choice.lower():
+        htop_bin = shutil.which("htop") or "htop"
+        subprocess.Popen(
+            [term_bin, "-e", htop_bin, "-p", str(pid)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=os.path.expanduser("~"),
+            env=env,
+        )
+    elif "btop" in action_choice.lower():
+        btop_bin = shutil.which("btop") or "btop"
+        subprocess.Popen(
+            [term_bin, "-e", btop_bin, "--utf-force"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=os.path.expanduser("~"),
+            env=env,
+        )
+    elif "syscall trace" in action_choice.lower() or "strace" in action_choice.lower():
+        strace_bin = shutil.which("strace") or "strace"
+        subprocess.Popen(
+            [term_bin, "-e", "bash", "-c", f"{strace_bin} -p {pid} || read -p 'Trace ended. Press Enter...'"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=os.path.expanduser("~"),
+            env=env,
+        )
+    elif "SIGTERM" in action_choice:
+        try:
+            os.kill(int(pid), 15)
+            subprocess.run(["notify-send", "Qtile", f"Sent SIGTERM to {comm} (PID {pid})"])
+        except Exception as e:
+            subprocess.run(["notify-send", "-u", "critical", "Qtile", f"Error sending SIGTERM: {e}"])
+    elif "SIGKILL" in action_choice:
+        try:
+            os.kill(int(pid), 9)
+            subprocess.run(["notify-send", "Qtile", f"Sent SIGKILL to {comm} (PID {pid})"])
+        except Exception as e:
+            subprocess.run(["notify-send", "-u", "critical", "Qtile", f"Error sending SIGKILL: {e}"])
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("--terminate", "-t", "--kill", "-k"):
+        show_terminate_menu()
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--menu", "-m", "menu"):
+        show_menu()
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--background", "-bg", "bg"):
+        show_menu(filter_bg=True)
+    else:
+        data = get_process_data()
+        print(json.dumps({
+            "count": data["count"],
+            "bg_count": data["bg_count"],
+            "fg_count": data["fg_count"],
+            "summary": data["summary"],
+            "tooltip": data["tooltip"],
+        }))
+
+
+if __name__ == "__main__":
+    main()

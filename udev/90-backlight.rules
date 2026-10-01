@@ -1,0 +1,12 @@
+# ==============================================================================
+# File: 90-backlight.rules
+# Purpose: Grant unprivileged video and input group members write access to
+#          screen backlight and keyboard backlight controllers.
+# ==============================================================================
+
+# Screen Backlight (e.g., intel_backlight, acpi_video0)
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod 0664 /sys/class/backlight/%k/brightness"
+
+# Keyboard Backlight (e.g., smc::kbd_backlight, asus::kbd_backlight)
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="*::kbd_backlight", RUN+="/bin/chgrp video /sys/class/leds/%k/brightness", RUN+="/bin/chmod 0664 /sys/class/leds/%k/brightness"
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="*::kbd_backlight", RUN+="/bin/chgrp input /sys/class/leds/%k/brightness", RUN+="/bin/chmod 0664 /sys/class/leds/%k/brightness"

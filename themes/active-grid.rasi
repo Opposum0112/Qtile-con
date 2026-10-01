@@ -1,0 +1,106 @@
+/* Dynamic Qtile-Con Thumbnail Grid Theme — catppuccin-mocha */
+configuration {
+    show-icons: true;
+    icon-theme: "Adwaita";
+}
+
+* {
+    font: "JetBrainsMono Nerd Font 9.5";
+    background-color: transparent;
+    text-color: #cdd6f4;
+}
+
+window {
+    location: center;
+    anchor: center;
+    width: 46%;
+    border: 2px;
+    border-color: #cba6f7;
+    border-radius: 12px;
+    background-color: #1e1e2e;
+    padding: 10px;
+}
+
+mainbox {
+    background-color: #1e1e2e;
+    spacing: 8px;
+    children: [ inputbar, message, listview ];
+}
+
+inputbar {
+    background-color: #313244;
+    border: 1px;
+    border-color: #45475a;
+    border-radius: 8px;
+    padding: 6px 10px;
+    children: [ prompt, entry ];
+    spacing: 6px;
+}
+
+prompt {
+    text-color: #cba6f7;
+}
+
+entry {
+    placeholder: "Search thumbnails…";
+    placeholder-color: #6c7086;
+    text-color: #cdd6f4;
+}
+
+message {
+    background-color: #313244;
+    border-radius: 6px;
+    padding: 5px 8px;
+}
+
+listview {
+    background-color: #1e1e2e;
+    lines: 3;
+    columns: 3;
+    fixed-height: false;
+    fixed-columns: true;
+    spacing: 8px;
+    scrollbar: true;
+    cycle: true;
+}
+
+scrollbar {
+    width: 5px;
+    border: 0;
+    handle-width: 5px;
+    handle-color: #cba6f7;
+    border-radius: 3px;
+    background-color: #313244;
+}
+
+element {
+    background-color: #313244;
+    border-radius: 8px;
+    padding: 6px;
+    orientation: vertical;
+    spacing: 4px;
+    border: 1px;
+    border-color: #45475a;
+}
+
+element selected {
+    background-color: #45475a;
+    text-color: #f5e0dc;
+    border: 1px;
+    border-color: #cba6f7;
+}
+
+element-icon {
+    size: 68px;
+    horizontal-align: 0.5;
+    vertical-align: 0.5;
+    border-radius: 5px;
+    background-color: transparent;
+}
+
+element-text {
+    background-color: transparent;
+    text-color: inherit;
+    horizontal-align: 0.5;
+    vertical-align: 0.5;
+}

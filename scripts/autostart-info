@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Autostart Session Applications monitor and interactive Rofi manager.
+
+Actively tracks daemons and services initialized when the Qtile session starts:
+- PolicyKit Agent (lxpolkit / polkit-gnome)
+- Notification Daemon (dunst)
+- Clipboard History (clipboard-history / greenclip)
+- Touchpad Gestures (gesture-daemon / libinput-gestures)
+- GTK Theme Daemon (xsettingsd)
+- Network Applet (nm-applet)
+
+Provides:
+- Bar display: Clean autostart icon (󱓞)
+- Bar hover: Deep status per autostart daemon (PID, RAM, running/stopped)
+- Left-click: Interactive Rofi menu to view, start, restart, and inspect autostart daemons
+- Middle-click: Restart all autostart services
+- Right-click: Open autostart script in terminal editor
+"""
+import html
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+AUTOSTART_APPS = [
+    {
+        "id": "lxpolkit",
+        "name": "PolicyKit Agent",
+        "role": "Root elevation GUI dialogs (GParted, pkexec)",
+        "match": ["lxpolkit", "polkit-gnome", "polkit-kde"],
+        "launch": ["lxpolkit"],
+    },
+    {
+        "id": "dunst",
+        "name": "Notification Daemon",
+        "role": "Desktop notifications",
+        "match": ["dunst"],
+        "launch": ["dunst"],
+    },
+    {
+        "id": "clipboard-history",
+        "name": "Clipboard Manager",
+        "role": "X11 persistent clipboard history manager",
+        "match": ["clipboard-history daemon", "greenclip daemon", "greenclip"],
+        "launch": ["bash", str(Path.home() / ".config/qtile/scripts/clipboard-history"), "daemon"],
+    },
+    {
+        "id": "gesture-daemon",
+        "name": "Touchpad Gestures",
+        "role": "Multi-touch gesture engine (swipes, pinches)",
+        "match": ["gesture-daemon", "libinput-gestures"],
+        "launch": [str(Path.home() / ".config/qtile/scripts/gesture-daemon")],
+    },
+    {
+        "id": "xsettingsd",
+        "name": "GTK Theme Daemon",
+        "role": "GTK & Thunar theme synchronization",
+        "match": ["xsettingsd"],
+        "launch": ["xsettingsd"],
+    },
+    {
+        "id": "nm-applet",
+        "name": "Network Applet",
+        "role": "NetworkManager tray indicator",
+        "match": ["nm-applet"],
+        "launch": ["nm-applet", "--indicator"],
+    },
+]
+
+
+def get_theme_path():
+    """Retrieve active Rofi theme path."""
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "qtile"
+    theme = os.environ.get("QTILE_ROFI_THEME", str(config_dir / "themes/catppuccin-mocha.rasi"))
+    if not os.path.isfile(theme):
+        repo_theme = Path(__file__).resolve().parent.parent / "themes/catppuccin-mocha.rasi"
+        if repo_theme.is_file():
+            theme = str(repo_theme)
+    return theme
+
+
+def get_autostart_data():
+    """Retrieve status of all autostart session daemons."""
+    try:
+        cmd = ["ps", "-eo", "pid,tty,%cpu,%mem,comm,args", "--sort=-%cpu", "--no-headers"]
+        output = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+        lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
+    except Exception:
+        lines = []
+
+    parsed = []
+    my_pid = str(os.getpid())
+
+    for line in lines:
+        parts = line.split(None, 5)
+        if len(parts) >= 5:
+            pid = parts[0]
+            if pid == my_pid:
+                continue
+            tty = parts[1]
+            cpu_str = parts[2]
+            mem_str = parts[3]
+            comm = parts[4]
+            args = parts[5] if len(parts) > 5 else comm
+            try:
+                cpu = float(cpu_str)
+                mem = float(mem_str)
+                parsed.append({
+                    "pid": pid,
+                    "tty": tty,
+                    "cpu": cpu,
+                    "mem": mem,
+                    "comm": comm,
+                    "args": args,
+                })
+            except ValueError:
+                continue
+
+    autostart_status = []
+    for app in AUTOSTART_APPS:
+        matched_proc = None
+        for p in parsed:
+            p_text = f"{p['comm']} {p['args']}".lower()
+            if any(pattern.lower() in p_text for pattern in app["match"]):
+                matched_proc = p
+                break
+
+        if matched_proc:
+            autostart_status.append({
+                "id": app["id"],
+                "name": app["name"],
+                "role": app["role"],
+                "is_running": True,
+                "pid": matched_proc["pid"],
+                "cpu": matched_proc["cpu"],
+                "mem": matched_proc["mem"],
+                "comm": matched_proc["comm"],
+                "launch": app["launch"],
+            })
+        else:
+            autostart_status.append({
+                "id": app["id"],
+                "name": app["name"],
+                "role": app["role"],
+                "is_running": False,
+                "pid": None,
+                "cpu": 0.0,
+                "mem": 0.0,
+                "comm": app["id"],
+                "launch": app["launch"],
+            })
+
+    auto_running = [a for a in autostart_status if a["is_running"]]
+    auto_running_count = len(auto_running)
+    auto_total_count = len(AUTOSTART_APPS)
+
+    tooltip_lines = [
+        f"<b><span color='#cba6f7'>󱓞 Autostart Session Applications ({auto_running_count}/{auto_total_count} Active):</span></b>",
+    ]
+    for a in autostart_status:
+        if a["is_running"]:
+            dot = "<span color='#a6e3a1'>●</span>"
+            state = f"<span color='#a6e3a1'>RUNNING</span> <span color='#a6adc8'>[PID: {a['pid']}, RAM: {a['mem']:.1f}%]</span>"
+        else:
+            dot = "<span color='#f38ba8'>○</span>"
+            state = "<span color='#f38ba8'>STOPPED</span>"
+        name_esc = html.escape(a["name"])
+        role_esc = html.escape(a["role"])
+        tooltip_lines.append(f"  {dot} <b>{name_esc}</b> - {state}")
+        tooltip_lines.append(f"     <span color='#6c7086'>↳ {role_esc}</span>")
+
+    tooltip_lines.extend([
+        "",
+        "<b><span color='#cba6f7'>Options &amp; Actions:</span></b>",
+        "  • <span color='#b4befe'>Left-click:</span> View &amp; manage autostart session applications",
+        "  • <span color='#b4befe'>Middle-click:</span> Restart all session autostart services",
+        "  • <span color='#b4befe'>Right-click:</span> Edit autostart script in editor",
+    ])
+
+    return {
+        "auto_running": auto_running_count,
+        "auto_total": auto_total_count,
+        "autostart_status": autostart_status,
+        "icon": "󱓞",
+        "summary": f"󱓞 {auto_running_count}/{auto_total_count} auto",
+        "tooltip": "\n".join(tooltip_lines),
+    }
+
+
+def show_menu():
+    """Show interactive autostart manager in Rofi."""
+    data = get_autostart_data()
+    autostart_status = data.get("autostart_status", [])
+
+    theme = get_theme_path()
+    menu_lines = []
+    action_map = {}
+
+    menu_lines.append("󱓞  ── AUTOSTART SESSION APPLICATIONS ─────────────────────────────────")
+    action_map[menu_lines[-1]] = ("header", None)
+
+    for a in autostart_status:
+        state_str = f"● RUNNING (PID {a['pid']:>6}, RAM {a['mem']:>4.1f}%)" if a["is_running"] else "○ STOPPED"
+        line = f"󱓞  {a['name']:<22} {state_str:<32} │ {a['role']}"
+        menu_lines.append(line)
+        action_map[line] = ("autostart_app", a)
+
+    menu_lines.append("󰑓  [Autostart] Restart all session autostart services")
+    action_map[menu_lines[-1]] = ("restart_all_autostart", None)
+
+    menu_lines.append("󱓞  [Autostart] Edit autostart script (~/.config/qtile/scripts/autostart)")
+    action_map[menu_lines[-1]] = ("edit_autostart", None)
+
+    rofi_cmd = ["rofi", "-dmenu", "-i", "-p", "Autostart Session Apps > "]
+    if os.path.isfile(theme):
+        rofi_cmd.extend(["-theme", theme])
+
+    proc = subprocess.Popen(rofi_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    selected, _ = proc.communicate(input="\n".join(menu_lines))
+    selected = (selected or "").strip()
+
+    if not selected or selected not in action_map:
+        return
+
+    action_type, action_payload = action_map[selected]
+    if action_type == "header":
+        return
+
+    term_bin = shutil.which("alacritty") or shutil.which("kitty") or "x-terminal-emulator"
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "micro"
+
+    if action_type == "edit_autostart":
+        autostart_path = Path.home() / ".config/qtile/scripts/autostart"
+        subprocess.Popen([term_bin, "-e", editor, str(autostart_path)], start_new_session=True)
+        return
+
+    if action_type == "restart_all_autostart":
+        autostart_path = Path.home() / ".config/qtile/scripts/autostart"
+        subprocess.Popen(["bash", str(autostart_path)], start_new_session=True)
+        subprocess.run(["notify-send", "Qtile Autostart", "Restarted all session autostart services"])
+        return
+
+    if action_type == "autostart_app":
+        app = action_payload
+        app_actions = []
+        app_action_map = {}
+
+        if app["is_running"]:
+            app_actions.append(f"󰑓  Restart {app['name']}")
+            app_action_map[app_actions[-1]] = "restart"
+            app_actions.append(f"󰜉  Terminate gracefully (SIGTERM PID {app['pid']})")
+            app_action_map[app_actions[-1]] = "sigterm"
+            app_actions.append(f"󰐥  Force kill (SIGKILL PID {app['pid']})")
+            app_action_map[app_actions[-1]] = "sigkill"
+            app_actions.append(f"󰒋  Why Is This Running? (witr PID {app['pid']})")
+            app_action_map[app_actions[-1]] = "witr"
+            app_actions.append(f"󰍹  Inspect in htop (PID {app['pid']})")
+            app_action_map[app_actions[-1]] = "htop"
+        else:
+            app_actions.append(f"󰐥  Start {app['name']}")
+            app_action_map[app_actions[-1]] = "start"
+
+        app_actions.append("󰅖  Cancel")
+
+        sub_cmd = ["rofi", "-dmenu", "-i", "-p", f"{app['name']} > "]
+        if os.path.isfile(theme):
+            sub_cmd.extend(["-theme", theme])
+
+        sub_proc = subprocess.Popen(sub_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        choice, _ = sub_proc.communicate(input="\n".join(app_actions))
+        choice = (choice or "").strip()
+
+        if not choice or choice not in app_action_map:
+            return
+
+        act = app_action_map[choice]
+        if act == "start":
+            subprocess.Popen(app["launch"], start_new_session=True)
+            subprocess.run(["notify-send", "Autostart Daemon", f"Started {app['name']}"])
+        elif act == "restart":
+            if app["pid"]:
+                try:
+                    os.kill(int(app["pid"]), 15)
+                except Exception:
+                    pass
+            subprocess.Popen(app["launch"], start_new_session=True)
+            subprocess.run(["notify-send", "Autostart Daemon", f"Restarted {app['name']}"])
+        elif act == "sigterm":
+            try:
+                os.kill(int(app["pid"]), 15)
+                subprocess.run(["notify-send", "Autostart Daemon", f"Sent SIGTERM to {app['name']} (PID {app['pid']})"])
+            except Exception as e:
+                subprocess.run(["notify-send", "-u", "critical", "Error", f"Failed to terminate {app['name']}: {e}"])
+        elif act == "sigkill":
+            try:
+                os.kill(int(app["pid"]), 9)
+                subprocess.run(["notify-send", "Autostart Daemon", f"Sent SIGKILL to {app['name']} (PID {app['pid']})"])
+            except Exception as e:
+                subprocess.run(["notify-send", "-u", "critical", "Error", f"Failed to kill {app['name']}: {e}"])
+        elif act == "witr":
+            witr_bin = shutil.which("witr") or str(Path.home() / ".local/bin/witr")
+            cmd = f"{witr_bin} --pid {app['pid']} --tree || {witr_bin} --pid {app['pid']}; echo ''; read -p 'Press Enter to close...'"
+            subprocess.Popen([term_bin, "-e", "bash", "-c", cmd], start_new_session=True)
+        elif act == "htop":
+            subprocess.Popen([term_bin, "-e", "htop", "-p", str(app["pid"])], start_new_session=True)
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("--menu", "-m", "menu"):
+        show_menu()
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--restart", "-r", "restart"):
+        autostart_path = Path.home() / ".config/qtile/scripts/autostart"
+        subprocess.Popen(["bash", str(autostart_path)], start_new_session=True)
+        subprocess.run(["notify-send", "Qtile Autostart", "Restarted all session autostart services"])
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--edit", "-e", "edit"):
+        term_bin = shutil.which("alacritty") or shutil.which("kitty") or "x-terminal-emulator"
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "micro"
+        autostart_path = Path.home() / ".config/qtile/scripts/autostart"
+        subprocess.Popen([term_bin, "-e", editor, str(autostart_path)], start_new_session=True)
+    else:
+        data = get_autostart_data()
+        print(json.dumps({
+            "auto_running": data["auto_running"],
+            "auto_total": data["auto_total"],
+            "icon": data["icon"],
+            "summary": data["summary"],
+            "tooltip": data["tooltip"],
+        }))
+
+
+if __name__ == "__main__":
+    main()

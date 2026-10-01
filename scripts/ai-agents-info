@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""AI Agent detection, status monitoring, and process management for Qtile SysAdmin."""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+IGNORED_COMMANDS = {
+    "grep", "rg", "ag", "find", "fd", "fdfind",
+    "nano", "vim", "nvim", "vi", "micro", "emacs", "code", "subl", "gedit", "kate",
+    "less", "more", "cat", "bat", "head", "tail", "view",
+    "git", "diff", "patch", "cp", "mv", "rm", "sed", "awk", "man",
+    "ai-agents-info", "test_sysadmin_widgets", "check-config",
+}
+
+
+def _python_agent_name(args):
+    """Determine friendly name for python-based agents."""
+    m = re.search(r"(\S+\.py)", args)
+    if m:
+        return f"Python Agent ({os.path.basename(m.group(1))})"
+    m = re.search(r"-m\s+(\S+)", args)
+    if m:
+        mod = m.group(1)
+        if "goose" in mod.lower():
+            return "Goose AI Agent (module)"
+        elif "codex" in mod.lower():
+            return "Codex Agent (module)"
+        elif "grok" in mod.lower():
+            return "Grok AI Assistant (module)"
+        return f"Python Agent ({mod})"
+    m = re.search(r"\b(crewai|autogen|langchain|langgraph|fabric|swarm|goose\w*|codex\w*|grok\w*|aider\w*|agent)\b", args, re.I)
+    if m:
+        return f"Python {m.group(1).capitalize()} Agent"
+    return "Python AI Agent"
+
+
+AGENT_DEFINITIONS = [
+    (re.compile(r"\b(agy|antigravity)\b", re.I), lambda c, a: "Antigravity CLI (agy)" if "agy" in c or "agy" in a else "Antigravity Core"),
+    (re.compile(r"\b(goose|goose-server)\b", re.I), lambda c, a: "Goose AI Agent"),
+    (re.compile(r"\b(codex|codex-cli|openai-codex)\b", re.I), lambda c, a: "Codex Agent"),
+    (re.compile(r"\b(grok|grok-cli|xai-grok)\b", re.I), lambda c, a: "Grok AI Assistant"),
+    (re.compile(r"\b(claude|claude-code)\b", re.I), lambda c, a: "Claude Code"),
+    (re.compile(r"\b(aider|aider-chat)\b", re.I), lambda c, a: "Aider AI Pair Programmer"),
+    (re.compile(r"\b(ollama|ollama-runner)\b", re.I), lambda c, a: "Ollama Engine"),
+    (re.compile(r"\b(open-webui)\b", re.I), lambda c, a: "Open WebUI"),
+    (re.compile(r"\b(llama-server|llama-cli)\b", re.I), lambda c, a: "LLaMA Server"),
+    (re.compile(r"\b(vllm)\b", re.I), lambda c, a: "vLLM Engine"),
+    (re.compile(r"\b(copilot-agent|github-copilot)\b", re.I), lambda c, a: "GitHub Copilot Agent"),
+    (re.compile(r"\b(cursor-agent|cursor-server)\b", re.I), lambda c, a: "Cursor AI Agent"),
+    (re.compile(r"\b(continue-server|continue-agent)\b", re.I), lambda c, a: "Continue.dev Agent"),
+    (re.compile(r"\b(open-interpreter|interpreter)\b", re.I), lambda c, a: "Open Interpreter"),
+    (re.compile(r"\b(gemini-cli|google-genai)\b", re.I), lambda c, a: "Gemini CLI"),
+    (re.compile(r"\b(cody-agent|sourcegraph-cody)\b", re.I), lambda c, a: "Sourcegraph Cody"),
+    (re.compile(r"\b(devin|devin-cli)\b", re.I), lambda c, a: "Devin Agent"),
+    (re.compile(r"\b(chatgpt|openai-chatgpt|chatgpt-cli)\b", re.I), lambda c, a: "ChatGPT Assistant"),
+    (
+        re.compile(r"\bpython[0-9.]*\s+.*(agent|subagent|langchain|langgraph|crewai|autogen|fabric|swarm|goose\w*|codex\w*|grok\w*|aider\w*)\b", re.I),
+        lambda c, a: _python_agent_name(a),
+    ),
+]
+
+LAUNCHABLE_AGENTS = [
+    ("agy", "󰚩  Launch AGY Terminal Session"),
+    ("goose", "󱚝  Launch Goose AI Agent Session"),
+    ("codex", "󰘦  Launch Codex Agent Session"),
+    ("grok", "󰫢  Launch Grok AI Session"),
+    ("claude", "󰛄  Launch Claude Code Session"),
+    ("chatgpt", "󰭹  Launch ChatGPT Assistant Session"),
+    ("aider", "󰅩  Launch Aider Pair Programmer"),
+    ("ollama", "󰚩  Start Ollama Server"),
+]
+
+THEME = os.path.expanduser("~/.config/qtile/themes/catppuccin-mocha.rasi")
+SCRIPTS = os.path.expanduser("~/.config/qtile/scripts")
+
+
+def find_ai_agents():
+    """Scan the system process table for running AI agents and background engines."""
+    agents = []
+    my_pid = str(os.getpid())
+    try:
+        proc = subprocess.run(
+            ["ps", "-eo", "pid,user,%cpu,%mem,etime,comm,args"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for line in proc.stdout.strip().split("\n")[1:]:
+            parts = line.strip().split(None, 6)
+            if len(parts) >= 7:
+                pid, user, cpu, mem, etime, comm, args = parts
+                if pid == my_pid:
+                    continue
+                first_token = os.path.basename(args.split()[0]) if args else ""
+                if (
+                    comm in IGNORED_COMMANDS
+                    or first_token in IGNORED_COMMANDS
+                    or "ai-agents-info" in args
+                    or "test_sysadmin_widgets" in args
+                ):
+                    continue
+
+                for pat, resolver in AGENT_DEFINITIONS:
+                    if pat.search(comm) or pat.search(args):
+                        name = resolver(comm, args) if callable(resolver) else resolver
+                        agents.append({
+                            "pid": pid,
+                            "user": user,
+                            "cpu": cpu,
+                            "mem": mem,
+                            "etime": etime,
+                            "comm": comm,
+                            "name": name,
+                            "args": args[:120],
+                        })
+                        break
+    except Exception:
+        pass
+    return agents
+
+
+def status_json():
+    """Generate compact status bar JSON with hover tooltip."""
+    agents = find_ai_agents()
+    count = len(agents)
+    if count == 0:
+        summary = "󰧑 0"
+        tooltip = "AI Agents: None running\nClick: Inspect / Launch AI Agents"
+    elif count == 1:
+        ag = agents[0]
+        summary = "󰧑 1 agent"
+        tooltip = (
+            f"AI Agents Running: 1\n"
+            f"• {ag['name']} (PID: {ag['pid']})\n"
+            f"  CPU: {ag['cpu']}% | RAM: {ag['mem']}% | Time: {ag['etime']}\n"
+            f"Click: Manage & Inspect Agents"
+        )
+    else:
+        summary = f"󰧑 {count} agents"
+        lines = [f"AI Agents Running: {count}"]
+        for ag in agents[:5]:
+            lines.append(f"• {ag['name']} [PID {ag['pid']}] (CPU: {ag['cpu']}%, RAM: {ag['mem']}%)")
+        if count > 5:
+            lines.append(f"... and {count - 5} more")
+        lines.append("Click: Manage & Inspect Agents")
+        tooltip = "\n".join(lines)
+
+    data = {
+        "summary": summary,
+        "tooltip": tooltip,
+        "count": count,
+        "agents": agents,
+    }
+    print(json.dumps(data, ensure_ascii=False))
+
+
+def show_menu():
+    """Interactive Rofi menu for AI process management and inspection."""
+    agents = find_ai_agents()
+    options = []
+    agent_map = {}
+
+    options.append("󰑐  Refresh Agent Status")
+
+    # Add quick launcher options for installed/standard agents
+    for cmd, label in LAUNCHABLE_AGENTS:
+        if shutil.which(cmd) or (cmd == "agy"):
+            options.append(label)
+
+    if agents:
+        options.append("────────────────────────────────────────────")
+        for ag in agents:
+            label = f"󰧑  [PID {ag['pid']}] {ag['name']}  |  CPU: {ag['cpu']}%  |  MEM: {ag['mem']}%  |  Time: {ag['etime']}"
+            options.append(label)
+            agent_map[label] = ag
+
+    options.append("󰅖  Cancel")
+
+    rofi_cmd = ["rofi", "-dmenu", "-i", "-p", f"AI Agents ({len(agents)} running) > "]
+    if os.path.isfile(THEME):
+        rofi_cmd.extend(["-theme", THEME])
+
+    proc = subprocess.run(rofi_cmd, input="\n".join(options), capture_output=True, text=True)
+    choice = proc.stdout.strip()
+
+    if not choice or "Cancel" in choice or "──────" in choice:
+        return
+
+    if "Refresh" in choice:
+        show_menu()
+        return
+
+    terminal = os.environ.get("QTILE_TERMINAL", "alacritty")
+    for cmd, label in LAUNCHABLE_AGENTS:
+        if label in choice:
+            if cmd == "ollama":
+                subprocess.Popen(["systemctl", "--user", "start", "ollama"], start_new_session=True)
+            else:
+                subprocess.Popen([terminal, "-e", cmd], start_new_session=True)
+            return
+
+    if choice in agent_map:
+        target = agent_map[choice]
+        pid = target["pid"]
+        name = target["name"]
+
+        action_options = [
+            f"󰒋  Inspect Process with witr (PID: {pid})",
+            f"󰅚  Terminate Agent (SIGTERM, PID: {pid})",
+            f"󰓛  Force Kill Agent (SIGKILL, PID: {pid})",
+            f"󰈈  View Process Command Line",
+            f"󰅖  Cancel",
+        ]
+
+        act_proc = subprocess.run(
+            ["rofi", "-dmenu", "-i", "-p", f"{name} [PID {pid}] > "] + (["-theme", THEME] if os.path.isfile(THEME) else []),
+            input="\n".join(action_options),
+            capture_output=True,
+            text=True,
+        )
+        action = act_proc.stdout.strip()
+        if not action or "Cancel" in action:
+            return
+
+        if "Inspect Process with witr" in action:
+            subprocess.Popen([
+                terminal, "-e", "bash", "-c",
+                f"{SCRIPTS}/qtile-action witr {pid} ; read -p 'Press Enter to close...'"
+            ], start_new_session=True)
+        elif "Terminate Agent" in action:
+            try:
+                os.kill(int(pid), 15)
+                subprocess.run(["notify-send", "-i", "dialog-warning", "AI Agent", f"Sent SIGTERM to {name} (PID: {pid})"])
+            except Exception as e:
+                subprocess.run(["notify-send", "-i", "dialog-error", "AI Agent", f"Failed to terminate: {e}"])
+        elif "Force Kill Agent" in action:
+            try:
+                os.kill(int(pid), 9)
+                subprocess.run(["notify-send", "-i", "dialog-error", "AI Agent", f"Killed {name} (PID: {pid})"])
+            except Exception as e:
+                subprocess.run(["notify-send", "-i", "dialog-error", "AI Agent", f"Failed to kill: {e}"])
+        elif "View Process" in action:
+            subprocess.Popen([
+                terminal, "-e", "bash", "-c",
+                f"echo 'PID: {pid}'; echo 'Name: {name}'; echo 'Command:'; tr '\\0' ' ' < /proc/{pid}/cmdline ; echo ''; echo ''; read -p 'Press Enter to close...'"
+            ], start_new_session=True)
+
+
+if __name__ == "__main__":
+    mode = sys.argv[1] if len(sys.argv) > 1 else "--status"
+    if mode in ("--menu", "-m"):
+        show_menu()
+    else:
+        status_json()
