@@ -12,6 +12,31 @@ A high-performance, modular Qtile desktop configuration engineered specifically 
 
 ---
 
+## Visual Showcase & 60-Second Feature Tour
+
+![Qtile-Con 60-Second Environment Feature Tour](assets/qtile_con_demo.gif)
+
+> 📹 **High-Definition Video**: A 60-second 1280x800 H.264 MP4 recording is available in [`assets/qtile_con_demo.mp4`](assets/qtile_con_demo.mp4) showcasing the complete workflow, Niri scroller ribbon animations, tabbed cheatsheet, application launcher, SysAdmin drawer, and theme switching.
+
+### Desktop Environment Screenshots
+
+| **Desktop Overview & Fastfetch Branding** | **Niri Scroller Ribbon Tiling** |
+|:---:|:---:|
+| ![Desktop Overview](assets/screenshots/01_desktop_overview.png) | ![Niri Scroller Tiling](assets/screenshots/02_scroller_tiling.png) |
+| *Active workspace: Helix editor, Fastfetch Qtile branding, and top capsule bar* | *Niri-inspired horizontal scroller layout with Helix editor & test runner* |
+
+| **Interactive Tabbed Cheatsheet** | **Application Launcher** |
+|:---:|:---:|
+| ![Interactive Tabbed Cheatsheet](assets/screenshots/03_tabbed_cheatsheet.png) | ![Application Launcher](assets/screenshots/04_app_launcher.png) |
+| *8-tab reference palette with dynamic hotkey parsing (`Super + /`)* | *Fuzzy application search with category tabs & Catppuccin styling* |
+
+| **SysAdmin Drawer & Control Center** | **Global Theme Synchronizer** |
+|:---:|:---:|
+| ![SysAdmin Drawer](assets/screenshots/05_sysadmin_drawer.png) | ![Theme Selector](assets/screenshots/06_theme_selector.png) |
+| *Administrative hub with Cockpit, AI agent monitor & Snapper snapshots* | *Live cross-application color palette switcher (7 themes)* |
+
+---
+
 ## Quickstart (Under 1 Minute Setup)
 
 ```bash

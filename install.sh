@@ -68,6 +68,7 @@ MICRO_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/micro"
 HELIX_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/helix"
 YAZI_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/yazi"
 DUNST_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/dunst"
+FASTFETCH_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/qtile-con"
 
 # ------------------------------------------------------------------------------
@@ -127,6 +128,7 @@ REQUIRED_FILES=(
   "helix/config.toml"
   "yazi/yazi.toml"
   "dunst/dunstrc"
+  "fastfetch/config.jsonc"
   "gestures/libinput-gestures.conf"
   "udev/90-backlight.rules"
 )
@@ -723,6 +725,14 @@ if [[ ! -f "$YAZI_CONFIG_DIR/yazi.toml" ]]; then
   cp -f "$ROOT/yazi/yazi.toml" "$YAZI_CONFIG_DIR/yazi.toml"
   add_unique CREATED_FILES "$YAZI_CONFIG_DIR/yazi.toml"
   echo "[OK] Configured Yazi terminal file manager."
+fi
+
+# Deploy Fastfetch configuration with Qtile branding
+mkdir -p "$FASTFETCH_CONFIG_DIR"
+if [[ ! -f "$FASTFETCH_CONFIG_DIR/config.jsonc" ]]; then
+  cp -f "$ROOT/fastfetch/config.jsonc" "$FASTFETCH_CONFIG_DIR/config.jsonc"
+  add_unique CREATED_FILES "$FASTFETCH_CONFIG_DIR/config.jsonc"
+  echo "[OK] Configured Fastfetch with Qtile branding."
 fi
 
 # Deploy Micro theme directory if micro is installed
