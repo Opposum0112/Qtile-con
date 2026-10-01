@@ -317,6 +317,9 @@ def apply_firefox(palette, theme_name="qtile-theme", restart_if_running=True):
     rosewater = palette.get("rosewater", text)
     red = palette.get("red", "#f38ba8")
 
+    active_theme_id = "firefox-compact-light@mozilla.org" if light else "firefox-compact-dark@mozilla.org"
+    dark_flag_bool = "false" if light else "true"
+
     # Explicit user.js preferences to enforce matching theme and stylesheet execution
     managed_keys = [
         "toolkit.legacyUserProfileCustomizations.stylesheets",
@@ -328,6 +331,8 @@ def apply_firefox(palette, theme_name="qtile-theme", restart_if_running=True):
         "browser.theme.toolbar-theme",
         "browser.theme.content-theme",
         "layout.css.prefers-color-scheme.content-override",
+        "extensions.activeThemeID",
+        "widget.chrome.allow-gtk-dark-theme",
     ]
 
     managed_prefs = [
@@ -341,6 +346,8 @@ def apply_firefox(palette, theme_name="qtile-theme", restart_if_running=True):
         f'user_pref("browser.theme.toolbar-theme", {theme_code});',
         f'user_pref("browser.theme.content-theme", {theme_code});',
         f'user_pref("layout.css.prefers-color-scheme.content-override", {theme_code});',
+        f'user_pref("extensions.activeThemeID", "{active_theme_id}");',
+        f'user_pref("widget.chrome.allow-gtk-dark-theme", {dark_flag_bool});',
     ]
 
     user_chrome_content = f"""/* Qtile-Con dynamic global theme colors */
@@ -462,7 +469,11 @@ findbar {{
 }}
 """
 
-    user_content_content = f"""/* Qtile-Con dynamic global theme colors for new tab / internal pages */
+    user_content_content = f"""/* Qtile-Con dynamic global theme colors */
+:root {{
+    color-scheme: {color_scheme} !important;
+}}
+
 @-moz-document url("about:blank"), url("about:newtab"), url("about:home"), url("about:privatebrowsing") {{
     :root, body {{
         color-scheme: {color_scheme} !important;
@@ -502,7 +513,21 @@ findbar {{
         except OSError:
             pass
 
-        # 2. Write userChrome.css
+        # 2. Update prefs.js
+        pjs = profile_dir / "prefs.js"
+        if pjs.is_file():
+            try:
+                pjs_lines = pjs.read_text(encoding="utf-8").splitlines()
+                pjs_clean = [
+                    line for line in pjs_lines
+                    if not any(f'"{k}"' in line for k in managed_keys)
+                ]
+                pjs_clean.extend(managed_prefs[1:])
+                pjs.write_text("\n".join(pjs_clean) + "\n", encoding="utf-8")
+            except OSError:
+                pass
+
+        # 3. Write userChrome.css
         chrome_dir = profile_dir / "chrome"
         chrome_dir.mkdir(exist_ok=True)
         css_file = chrome_dir / "userChrome.css"
@@ -511,7 +536,7 @@ findbar {{
         except OSError:
             pass
 
-        # 3. Write userContent.css
+        # 4. Write userContent.css
         uc_file = chrome_dir / "userContent.css"
         try:
             uc_file.write_text(user_content_content, encoding="utf-8")
@@ -543,6 +568,40 @@ findbar {{
                 lock_exists = any((p / "parent.lock").exists() for p in profiles)
                 if not pids and not lock_exists:
                     break
+
+            # Force kill if still hung
+            pids = subprocess.run(["pgrep", "-f", "firefox"], capture_output=True).stdout.strip()
+            if pids:
+                subprocess.run(["pkill", "-9", "-f", "firefox-esr|firefox"], stderr=subprocess.DEVNULL)
+                time.sleep(0.2)
+
+            for p in profiles:
+                (p / "parent.lock").unlink(missing_ok=True)
+
+            # Update prefs.js after Firefox has closed so Firefox won't overwrite on exit
+            for profile_dir in profiles:
+                pjs = profile_dir / "prefs.js"
+                if pjs.is_file():
+                    try:
+                        pjs_lines = pjs.read_text(encoding="utf-8").splitlines()
+                        pjs_clean = [
+                            line for line in pjs_lines
+                            if not any(f'"{k}"' in line for k in managed_keys)
+                        ]
+                        pjs_clean.extend(managed_prefs[1:])
+                        pjs.write_text("\n".join(pjs_clean) + "\n", encoding="utf-8")
+                    except OSError:
+                        pass
+
+            # Clear cache again
+            for croot in cache_dirs:
+                if croot.is_dir():
+                    for sc in croot.glob("*/startupCache"):
+                        try:
+                            shutil.rmtree(sc, ignore_errors=True)
+                        except Exception:
+                            pass
+
             time.sleep(0.2)
             # Relaunch in background with guaranteed DISPLAY
             env = os.environ.copy()
@@ -584,8 +643,8 @@ configuration {{
     display-files: "󰈞 File";
     display-content: "󰈬 Content";
     terminal: "alacritty";
-    run-command: "qtile-run {cmd}";
-    run-shell-command: "qtile-run {cmd}";
+    run-command: "qtile-run {{cmd}}";
+    run-shell-command: "qtile-run {{cmd}}";
     sidebar-mode: true;
     kb-mode-next: "Shift+Right,Control+Tab";
     kb-mode-previous: "Shift+Left,Control+ISO_Left_Tab";
@@ -1220,6 +1279,136 @@ def apply_helix(palette, theme_name):
             pass
 
 
+def apply_fastfetch(palette, theme_name):
+    """Synchronize fastfetch logo, keys, and theme display with the active palette."""
+    def hex_to_rgb(hex_str):
+        h = hex_str.lstrip('#')
+        if len(h) == 3:
+            h = ''.join([c*2 for c in h])
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+    c_mauve = palette.get("mauve", "#cba6f7")
+    c_lavender = palette.get("lavender", "#b4befe")
+    c_blue = palette.get("blue", "#89b4fa")
+    c_sky = palette.get("sky", "#74c7ec")
+    c_teal = palette.get("teal", "#94e2d5")
+    c_green = palette.get("green", "#a6e3a1")
+    c_yellow = palette.get("yellow", "#f9e2af")
+    c_peach = palette.get("peach", "#fab387")
+    c_red = palette.get("red", "#f38ba8")
+    c_surface1 = palette.get("surface1", "#45475a")
+    c_overlay0 = palette.get("overlay0", palette.get("overlay", "#6c7086"))
+
+    r_mauve, g_mauve, b_mauve = hex_to_rgb(c_mauve)
+    r_lav, g_lav, b_lav = hex_to_rgb(c_lavender)
+    r_blue, g_blue, b_blue = hex_to_rgb(c_blue)
+    r_sky, g_sky, b_sky = hex_to_rgb(c_sky)
+    r_teal, g_teal, b_teal = hex_to_rgb(c_teal)
+    r_green, g_green, b_green = hex_to_rgb(c_green)
+    r_yel, g_yel, b_yel = hex_to_rgb(c_yellow)
+    r_peach, g_peach, b_peach = hex_to_rgb(c_peach)
+    r_red, g_red, b_red = hex_to_rgb(c_red)
+    r_s1, g_s1, b_s1 = hex_to_rgb(c_surface1)
+    r_ov, g_ov, b_ov = hex_to_rgb(c_overlay0)
+
+    titles = {
+        "catppuccin-mocha": "Catppuccin Mocha",
+        "catppuccin-latte": "Catppuccin Latte",
+        "catppuccin-frappe": "Catppuccin Frappé",
+        "catppuccin-macchiato": "Catppuccin Macchiato",
+        "nord": "Nord Arctic",
+        "dracula": "Dracula",
+        "gruvbox-dark": "Gruvbox Dark",
+        "gruvbox": "Gruvbox Dark",
+        "tokyo-night": "Tokyo Night",
+        "rose-pine": "Rosé Pine",
+        "solarized-dark": "Solarized Dark",
+        "ayu-dark": "Ayu Dark",
+        "github-dark": "GitHub Dark",
+        "kanagawa": "Kanagawa",
+        "everforest-dark": "Everforest Dark",
+        "cyberpunk": "Cyberpunk Neon",
+        "synthwave": "Synthwave '84",
+        "monokai-pro": "Monokai Pro",
+        "one-dark": "One Dark Pro",
+    }
+    title = titles.get(theme_name, theme_name.replace("-", " ").title())
+
+    logo_source = (
+        f"  \u001b[38;2;{r_mauve};{g_mauve};{b_mauve}m▄██████▄\u001b[0m  \n"
+        f" \u001b[38;2;{r_mauve};{g_mauve};{b_mauve}m██▀    ▀██\u001b[0m \n"
+        f" \u001b[38;2;{r_lav};{g_lav};{b_lav}m██      ██\u001b[0m \n"
+        f" \u001b[38;2;{r_blue};{g_blue};{b_blue}m██      ██\u001b[0m \n"
+        f" \u001b[38;2;{r_sky};{g_sky};{b_sky}m██▄    ▄██\u001b[0m \n"
+        f"  \u001b[38;2;{r_teal};{g_teal};{b_teal}m▀██████▀\u001b[0m  \n"
+        f"        \u001b[38;2;{r_red};{g_red};{b_red}m▀██\u001b[0m \n"
+        f"    \u001b[1;38;2;{r_mauve};{g_mauve};{b_mauve}mQTILE\u001b[0m   "
+    )
+
+    fastfetch_config = {
+        "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+        "logo": {
+            "type": "data",
+            "source": logo_source,
+            "padding": {
+                "right": 3,
+                "left": 1
+            }
+        },
+        "display": {
+            "separator": f" \u001b[38;2;{r_ov};{g_ov};{b_ov}m│\u001b[0m "
+        },
+        "modules": [
+            { "type": "custom", "format": f"\u001b[1;38;2;{r_mauve};{g_mauve};{b_mauve}mQtile-Con\u001b[0m \u001b[38;2;{r_ov};{g_ov};{b_ov}m•\u001b[0m \u001b[38;2;{r_green};{g_green};{b_green}mModern X11 Desktop\u001b[0m" },
+            { "type": "custom", "format": f"\u001b[38;2;{r_s1};{g_s1};{b_s1}m──────────────────────────────────────────\u001b[0m" },
+            { "type": "os",       "key": " OS      ", "keyColor": f"38;2;{r_mauve};{g_mauve};{b_mauve}", "format": "{name}" },
+            { "type": "kernel",   "key": " Kernel  ", "keyColor": f"38;2;{r_lav};{g_lav};{b_lav}", "format": "{release}" },
+            { "type": "uptime",   "key": " Uptime  ", "keyColor": f"38;2;{r_blue};{g_blue};{b_blue}" },
+            { "type": "wm",       "key": " WM      ", "keyColor": f"38;2;{r_sky};{g_sky};{b_sky}", "format": "Qtile (X11)" },
+            { "type": "custom",   "key": "󰕰 Layout  ", "keyColor": f"38;2;{r_teal};{g_teal};{b_teal}", "format": "Niri Scroller Ribbon" },
+            { "type": "terminal", "key": " Terminal", "keyColor": f"38;2;{r_green};{g_green};{b_green}", "format": "{pretty-name}" },
+            { "type": "shell",    "key": " Shell   ", "keyColor": f"38;2;{r_yel};{g_yel};{b_yel}", "format": "{pretty-name}" },
+            { "type": "custom",   "key": "󰏘 Theme   ", "keyColor": f"38;2;{r_peach};{g_peach};{b_peach}", "format": title },
+            { "type": "memory",   "key": " Memory  ", "keyColor": f"38;2;{r_red};{g_red};{b_red}", "format": "{used} / {total}" },
+            { "type": "custom", "format": f"\u001b[38;2;{r_s1};{g_s1};{b_s1}m──────────────────────────────────────────\u001b[0m" },
+            { "type": "colors", "symbol": "circle" }
+        ]
+    }
+
+    import json
+    content = json.dumps(fastfetch_config, indent=4)
+    user_ff = Path.home() / ".config" / "fastfetch" / "config.jsonc"
+    try:
+        user_ff.parent.mkdir(parents=True, exist_ok=True)
+        user_ff.write_text(content, encoding="utf-8")
+    except OSError:
+        pass
+
+    repo_ff = Path(__file__).resolve().parent.parent / "fastfetch" / "config.jsonc"
+    try:
+        if repo_ff.parent.is_dir():
+            repo_ff.write_text(content, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def reload_qtile():
+    """Trigger a live in-process reload of Qtile config so status bar and widgets update instantly."""
+    try:
+        from libqtile.command.client import InteractiveCommandClient
+        c = InteractiveCommandClient()
+        c.eval("import sys\nfor m in list(sys.modules.keys()):\n    if m.startswith('qtile_config'):\n        del sys.modules[m]")
+        c.reload_config()
+        return True
+    except Exception:
+        pass
+
+    res = subprocess.run(["qtile", "cmd-obj", "-o", "cmd", "-f", "reload_config"], stderr=subprocess.DEVNULL)
+    if res.returncode != 0:
+        subprocess.run(["qtile", "cmd-obj", "-o", "cmd", "-f", "restart"], stderr=subprocess.DEVNULL)
+    return True
+
+
 def main():
     if "--help" in sys.argv or "-h" in sys.argv:
         print("Usage: apply-global-theme <theme_json_file_or_name> [--no-restart-firefox]")
@@ -1265,11 +1454,13 @@ def main():
     apply_thunar_and_gtk(palette, theme_name)
     apply_yazi(palette, theme_name)
     apply_helix(palette, theme_name)
+    apply_fastfetch(palette, theme_name)
 
-    # Reload Qtile palette live
-    subprocess.run(["qtile", "cmd-obj", "-o", "cmd", "-f", "restart"], stderr=subprocess.DEVNULL)
+    # Reload Qtile palette and status bar live
+    reload_qtile()
+
     if shutil.which("notify-send"):
-        subprocess.run(["notify-send", "Global Theme Applied", f"Updated Qtile, Alacritty, Kitty, Micro, Firefox, Dunst, Thunar, Yazi, and Rofi to {theme_name}."])
+        subprocess.run(["notify-send", "Global Theme Applied", f"Updated Qtile, Alacritty, Kitty, Micro, Firefox, Dunst, Thunar, Yazi, Fastfetch, and Rofi to {theme_name}."])
     print(f"Global theme successfully applied: {theme_name}")
 
 

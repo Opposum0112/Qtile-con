@@ -13,11 +13,17 @@ This modular configuration architecture decouples Qtile into dedicated modules:
 import json
 import os
 import subprocess
+import sys
 from libqtile import hook
 
 # Guarantee standard X11 display environment variable
 if not os.environ.get("DISPLAY"):
     os.environ["DISPLAY"] = ":0"
+
+# Invalidate modular config cache so theme changes reload live on config reload
+for mod_name in list(sys.modules.keys()):
+    if mod_name.startswith("qtile_config"):
+        del sys.modules[mod_name]
 
 # Import modular Qtile configuration components
 from qtile_config.groups import groups

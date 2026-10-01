@@ -2,41 +2,84 @@
     "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
     "logo": {
         "type": "data",
-        "source": "    \u001b[38;2;203;166;247m▄██████▄\u001b[0m \n   \u001b[38;2;203;166;247m██▀    ▀██\u001b[0m\n   \u001b[38;2;180;190;254m██      ██\u001b[0m\n   \u001b[38;2;137;180;250m██      ██\u001b[0m\n   \u001b[38;2;116;199;236m██▄    ▄██\u001b[0m\n    \u001b[38;2;148;226;213m▀██████▀\u001b[0m \n          \u001b[38;2;243;139;168m▀██\u001b[0m\n      \u001b[1;38;2;203;166;247mQTILE\u001b[0m  ",
+        "source": "  \u001b[38;2;203;166;247m\u2584\u2588\u2588\u2588\u2588\u2588\u2588\u2584\u001b[0m  \n \u001b[38;2;203;166;247m\u2588\u2588\u2580    \u2580\u2588\u2588\u001b[0m \n \u001b[38;2;180;190;254m\u2588\u2588      \u2588\u2588\u001b[0m \n \u001b[38;2;137;180;250m\u2588\u2588      \u2588\u2588\u001b[0m \n \u001b[38;2;137;220;235m\u2588\u2588\u2584    \u2584\u2588\u2588\u001b[0m \n  \u001b[38;2;148;226;213m\u2580\u2588\u2588\u2588\u2588\u2588\u2588\u2580\u001b[0m  \n        \u001b[38;2;243;139;168m\u2580\u2588\u2588\u001b[0m \n    \u001b[1;38;2;203;166;247mQTILE\u001b[0m   ",
         "padding": {
             "right": 3,
             "left": 1
         }
     },
     "display": {
-        "separator": "  \u001b[38;2;108;112;134m│\u001b[0m  ",
-        "color": {
-            "keys": "magenta",
-            "title": "cyan"
-        }
+        "separator": " \u001b[38;2;108;112;134m\u2502\u001b[0m "
     },
     "modules": [
         {
             "type": "custom",
-            "format": "\u001b[1;38;2;203;166;247mQtile-Con\u001b[0m \u001b[38;2;108;112;134m•\u001b[0m \u001b[38;2;166;227;161mModern X11 Desktop\u001b[0m"
+            "format": "\u001b[1;38;2;203;166;247mQtile-Con\u001b[0m \u001b[38;2;108;112;134m\u2022\u001b[0m \u001b[38;2;166;227;161mModern X11 Desktop\u001b[0m"
         },
         {
             "type": "custom",
-            "format": "\u001b[38;2;69;71;90m─────────────────────────────────\u001b[0m"
+            "format": "\u001b[38;2;69;71;90m\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u001b[0m"
         },
-        { "type": "os", "key": "OS", "format": "{name}" },
-        { "type": "kernel", "key": "Kernel", "format": "{release}" },
-        { "type": "uptime", "key": "Uptime" },
-        { "type": "wm", "key": "WM", "format": "Qtile (X11)" },
-        { "type": "custom", "key": "Layout", "format": "Niri Scroller Ribbon" },
-        { "type": "terminal", "key": "Terminal" },
-        { "type": "shell", "key": "Shell" },
-        { "type": "custom", "key": "Theme", "format": "Catppuccin Mocha" },
-        { "type": "memory", "key": "Memory", "format": "{used} / {total}" },
+        {
+            "type": "os",
+            "key": "\uf17c OS      ",
+            "keyColor": "38;2;203;166;247",
+            "format": "{name}"
+        },
+        {
+            "type": "kernel",
+            "key": "\uf013 Kernel  ",
+            "keyColor": "38;2;180;190;254",
+            "format": "{release}"
+        },
+        {
+            "type": "uptime",
+            "key": "\ue641 Uptime  ",
+            "keyColor": "38;2;137;180;250"
+        },
+        {
+            "type": "wm",
+            "key": "\uf488 WM      ",
+            "keyColor": "38;2;137;220;235",
+            "format": "Qtile (X11)"
+        },
         {
             "type": "custom",
-            "format": "\u001b[38;2;69;71;90m─────────────────────────────────\u001b[0m"
+            "key": "\udb81\udd70 Layout  ",
+            "keyColor": "38;2;148;226;213",
+            "format": "Niri Scroller Ribbon"
         },
-        { "type": "colors", "symbol": "circle" }
+        {
+            "type": "terminal",
+            "key": "\ue795 Terminal",
+            "keyColor": "38;2;166;227;161",
+            "format": "{pretty-name}"
+        },
+        {
+            "type": "shell",
+            "key": "\uf489 Shell   ",
+            "keyColor": "38;2;249;226;175",
+            "format": "{pretty-name}"
+        },
+        {
+            "type": "custom",
+            "key": "\udb80\udfd8 Theme   ",
+            "keyColor": "38;2;250;179;135",
+            "format": "Catppuccin Mocha"
+        },
+        {
+            "type": "memory",
+            "key": "\uefc5 Memory  ",
+            "keyColor": "38;2;243;139;168",
+            "format": "{used} / {total}"
+        },
+        {
+            "type": "custom",
+            "format": "\u001b[38;2;69;71;90m\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u001b[0m"
+        },
+        {
+            "type": "colors",
+            "symbol": "circle"
+        }
     ]
 }
